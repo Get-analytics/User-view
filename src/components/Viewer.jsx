@@ -31,7 +31,7 @@ const Viewer = () => {
    
   useEffect(() => {
     if (id) {
-      fetch(`http://localhost:8000/api/shortid/viewer/${id}`)
+      fetch(`https://filescene.onrender.com/api/shortid/viewer/${id}`)
         .then((response) => {
           if (!response.ok) {
             throw new Error("ShortId not found");
