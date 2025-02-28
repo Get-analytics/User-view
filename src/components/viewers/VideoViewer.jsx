@@ -59,7 +59,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     const callExistUserAPI = async (userId, mimeType) => {
       try {
         const cleanedMimeType = mimeType;
-        const response = await fetch("http://localhost:8000/api/test2/existUser", {
+        const response = await fetch("https://filescene.onrender.com/api/test2/existUser", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ userId, mimeType: cleanedMimeType }),
@@ -75,7 +75,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     const callNewUserAPI = async (userId, mimeType) => {
       try {
         const cleanedMimeType = mimeType;
-        const response = await fetch("http://localhost:8000/api/test1/newUser", {
+        const response = await fetch("https://filescene.onrender.com/api/test1/newUser", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ userId, mimeType: cleanedMimeType }),
@@ -127,7 +127,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
       return () => clearTimeout(timer);
     }, [localStorageUserId, sessionStorageUserId, userId, ip, location, region, os, device, browser]);
 
-  const backendUrl = "http://localhost:8000/api/v1/video/analytics";
+  const backendUrl = "https://filescene.onrender.com/api/v1/video/analytics";
 
   // Create a ref to always hold the latest analytics state.
   const analyticsRef = useRef(analytics);
