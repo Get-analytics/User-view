@@ -67,7 +67,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
   const callExistUserAPI = async (userId, mimeType) => {
     try {
       const cleanedMimeType = getMimeType(mimeType);
-      const response = await fetch("http://localhost:8000/api/test2/existUser", {
+      const response = await fetch("https://filescene.onrender.com/api/test2/existUser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, mimeType: cleanedMimeType }),
@@ -83,7 +83,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
   const callNewUserAPI = async (userId, mimeType) => {
     try {
       const cleanedMimeType = getMimeType(mimeType);
-      const response = await fetch("http://localhost:8000/api/test1/newUser", {
+      const response = await fetch("https://filescene.onrender.com/api/test1/newUser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, mimeType: cleanedMimeType }),
@@ -285,7 +285,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
     };
 
     try {
-      const response = await fetch("http://localhost:8000/api/PdfInfo/pdfpageinfo", {
+      const response = await fetch("https://filescene.onrender.com/api/PdfInfo/pdfpageinfo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(finalData),
