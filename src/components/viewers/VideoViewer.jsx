@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Player,
   ControlBar,
@@ -19,6 +19,85 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
   console.log(window.location.pathname, "videoId from path");
   console.log(userId, "userid");
 
+  // -------------------- User API Logic --------------------
+  // Get userId from localStorage and sessionStorage
+  const localStorageUserId = localStorage.getItem("userId");
+  const sessionStorageUserId = sessionStorage.getItem("userId");
+
+  // Function to extract the last part of the MIME type (e.g., "mp4" from "video/mp4")
+  const getMimeType = (mimeType) => {
+    console.log(mimeType, "type of mime");
+    return mimeType && mimeType.includes("/") ? mimeType.split("/").pop() : "unknown";
+  };
+
+  // API call if the user already exists
+  const callExistUserAPI = async (userId, mimeType) => {
+    try {
+      const cleanedMimeType = getMimeType(mimeType);
+      const response = await fetch("https://filescene.onrender.com/api/test2/existUser", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, mimeType: cleanedMimeType }),
+      });
+      if (!response.ok) throw new Error("Failed to call existUser API");
+      console.log("existUser API called successfully");
+    } catch (error) {
+      console.error("Error calling existUser API:", error);
+    }
+  };
+
+  // API call for a new user
+  const callNewUserAPI = async (userId, mimeType) => {
+    try {
+      const cleanedMimeType = getMimeType(mimeType);
+      const response = await fetch("https://filescene.onrender.com/com/api/test1/newUser", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, mimeType: cleanedMimeType }),
+      });
+      if (!response.ok) throw new Error("Failed to call newUser API");
+      console.log("newUser API called successfully");
+    } catch (error) {
+      console.error("Error calling newUser API:", error);
+    }
+  };
+
+  // Use a ref to ensure the API call happens only once.
+  const apiCalledRef = useRef(false);
+  useEffect(() => {
+    if (apiCalledRef.current) return;
+    const delay = 1000; // 1-second delay
+    const timer = setTimeout(() => {
+      const isDataReady =
+        ip &&
+        location &&
+        userId &&
+        region &&
+        os &&
+        device &&
+        browser &&
+        !ip.includes("Detecting") &&
+        !location.includes("Detecting") &&
+        !userId.includes("Detecting") &&
+        !region.includes("Detecting") &&
+        !os.includes("Detecting") &&
+        !device.includes("Detecting") &&
+        !browser.includes("Detecting");
+
+      if (localStorageUserId && sessionStorageUserId && localStorageUserId === sessionStorageUserId) {
+        callExistUserAPI(localStorageUserId, mimeType);
+        apiCalledRef.current = true;
+      } else if (!localStorageUserId && !sessionStorageUserId) {
+        if (isDataReady && userId) {
+          callNewUserAPI(userId, mimeType);
+          apiCalledRef.current = true;
+        }
+      }
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [localStorageUserId, sessionStorageUserId, userId, ip, location, region, os, device, browser, mimeType]);
+
+  // -------------------- Video Analytics Code --------------------
   const playerRef = useRef(null);
   const [videoEl, setVideoEl] = useState(null); // HTMLVideoElement
   const [playedSeconds, setPlayedSeconds] = useState(0);
@@ -27,7 +106,6 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [isPiP, setIsPiP] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-    const apiCalledRef = useRef(false); // To track if API has been called
 
   // Extended analytics state.
   const [analytics, setAnalytics] = useState({
@@ -45,89 +123,19 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     currentPlayStart: null, // Start time of current continuous play segment
   });
 
-  
-    // Fetch userId from localStorage and sessionStorage
-    const localStorageUserId = localStorage.getItem("userId");
-    const sessionStorageUserId = sessionStorage.getItem("userId");
-  
-  // Function to extract the last part of the MIME type (e.g., "pdf" from "application/pdf")
-  // If mimeType is empty, return "unknown"
-
-  
-  
-    // Function to call the existUser API
-    const callExistUserAPI = async (userId, mimeType) => {
-      try {
-        const cleanedMimeType = mimeType;
-        const response = await fetch("https://filescene.onrender.com/api/test2/existUser", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId, mimeType: cleanedMimeType }),
-        });
-        if (!response.ok) throw new Error("Failed to call existUser API");
-        console.log("existUser API called successfully");
-      } catch (error) {
-        console.error("Error calling existUser API:", error);
-      }
-    };
-    
-    // Function to call the newUser API
-    const callNewUserAPI = async (userId, mimeType) => {
-      try {
-        const cleanedMimeType = mimeType;
-        const response = await fetch("https://filescene.onrender.com/api/test1/newUser", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId, mimeType: cleanedMimeType }),
-        });
-        if (!response.ok) throw new Error("Failed to call newUser API");
-        console.log("newUser API called successfully");
-      } catch (error) {
-        console.error("Error calling newUser API:", error);
-      }
-    };
-    // Logic to handle userId from localStorage and sessionStorage
-    useEffect(() => {
-      if (apiCalledRef.current) return; // Prevent multiple API calls
-    
-      const delay = 1000; // 1-second delay
-    
-      const timer = setTimeout(() => {
-        // Check if all required context data is ready
-        const isDataReady =
-          ip &&
-          location &&
-          userId &&
-          region &&
-          os &&
-          device &&
-          browser &&
-          !ip.includes("Detecting") &&
-          !location.includes("Detecting") &&
-          !userId.includes("Detecting") &&
-          !region.includes("Detecting") &&
-          !os.includes("Detecting") &&
-          !device.includes("Detecting") &&
-          !browser.includes("Detecting");
-    
-        if (localStorageUserId && sessionStorageUserId && localStorageUserId === sessionStorageUserId) {
-          // Both values exist and are the same
-          callExistUserAPI(localStorageUserId, mimeType);
-          apiCalledRef.current = true; // Mark API as called
-        } else if (!localStorageUserId && !sessionStorageUserId) {
-          // Both values are empty
-          if (isDataReady && userId) {
-            callNewUserAPI(userId, mimeType); // Use userId from useUser context
-            apiCalledRef.current = true; // Mark API as called
-          }
-        }
-      }, delay);
-    
-      // Cleanup the timer if the component unmounts or dependencies change
-      return () => clearTimeout(timer);
-    }, [localStorageUserId, sessionStorageUserId, userId, ip, location, region, os, device, browser]);
-
+  // Backend API endpoint.
   const backendUrl = "https://filescene.onrender.com/api/v1/video/analytics";
+
+  // Helper: Format seconds.
+  const formatTime = (seconds) => {
+    seconds = Math.floor(seconds);
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    if (hrs > 0) return `${hrs}h ${mins}m ${secs}s`;
+    else if (mins > 0) return `${mins}m ${secs}s`;
+    else return `${secs}s`;
+  };
 
   // Create a ref to always hold the latest analytics state.
   const analyticsRef = useRef(analytics);
@@ -144,17 +152,6 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
   const [dragSeekRecorded, setDragSeekRecorded] = useState(false);
   // Flag to mark that a jump (10-sec button) was triggered.
   const jumpTriggeredRef = useRef(false);
-
-  // Helper: Format seconds.
-  const formatTime = (seconds) => {
-    seconds = Math.floor(seconds);
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    if (hrs > 0) return `${hrs}h ${mins}m ${secs}s`;
-    else if (mins > 0) return `${mins}m ${secs}s`;
-    else return `${secs}s`;
-  };
 
   // Update playedSeconds every 500ms.
   useEffect(() => {
@@ -185,7 +182,6 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
   const handlePlay = () => {
     const currentTime = videoEl ? videoEl.currentTime : playedSeconds;
     setAnalytics((prev) => {
-      // Finalize any open pause event by updating its resumeTime.
       const updatedPauseEvents = [...prev.pauseResumeEvents];
       if (
         updatedPauseEvents.length > 0 &&
@@ -201,7 +197,6 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
         playCount: prev.playCount + 1,
         currentPlayStart: currentTime,
         pauseResumeEvents: updatedPauseEvents,
-        // Start a new speed event if none is open.
         currentSpeedEvent:
           prev.currentSpeedEvent ||
           { speed: playbackRate, startTime: currentTime, endTime: null },
@@ -213,7 +208,6 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     const currentTime = videoEl ? videoEl.currentTime : playedSeconds;
     setAnalytics((prev) => {
       let newSpeedEvents = prev.speedEvents;
-      // Finalize any open speed event on pause.
       if (prev.currentSpeedEvent) {
         newSpeedEvents = [
           ...newSpeedEvents,
@@ -329,7 +323,6 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     setAnalytics((prev) => {
       let updatedSpeedEvents = [...prev.speedEvents];
       let currentSpeedEvent = prev.currentSpeedEvent;
-      // Finalize any previous speed event if it exists.
       if (currentSpeedEvent) {
         updatedSpeedEvents.push({ ...currentSpeedEvent, endTime: currentTime });
       }
@@ -440,12 +433,12 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
   };
 
   // --------------------------------------------------
-  // Finalize and Send Analytics on Page Unload using Fetch API
+  // Periodic Analytics Submission (Every 15 Seconds)
   // --------------------------------------------------
   useEffect(() => {
-    const handleBeforeUnload = (event) => {
-      const currentTime =
-        videoEl && videoEl.currentTime ? videoEl.currentTime : playedSeconds;
+    const interval = setInterval(() => {
+      // Calculate additional watch time if video is playing.
+      const currentTime = videoEl ? videoEl.currentTime : playedSeconds;
       let additionalTime = 0;
       if (analyticsRef.current.currentPlayStart !== null) {
         additionalTime = currentTime - analyticsRef.current.currentPlayStart;
@@ -454,30 +447,11 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
         ...analyticsRef.current,
         totalWatchTime: analyticsRef.current.totalWatchTime + additionalTime,
       };
-      // Finalize any open speed event.
-      if (updatedAnalytics.currentSpeedEvent) {
-        updatedAnalytics.speedEvents = [
-          ...updatedAnalytics.speedEvents,
-          { ...updatedAnalytics.currentSpeedEvent, endTime: currentTime },
-        ];
-        updatedAnalytics.currentSpeedEvent = null;
-      }
-      // Finalize last pause event if still open.
-      if (videoEl && videoEl.paused) {
-        const lastIndex = updatedAnalytics.pauseResumeEvents.length - 1;
-        if (
-          lastIndex >= 0 &&
-          updatedAnalytics.pauseResumeEvents[lastIndex].resumeTime === null
-        ) {
-          updatedAnalytics.pauseResumeEvents[lastIndex] = {
-            ...updatedAnalytics.pauseResumeEvents[lastIndex],
-            resumeTime: currentTime,
-          };
-        }
-      }
+
       // Include additional fields from user context and props.
       updatedAnalytics = {
         ...updatedAnalytics,
+        outTime: new Date().toISOString(),
         ip: ip || "",
         location: location || "",
         userId: userId || "",
@@ -485,7 +459,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
         os: os || "",
         device: device || "",
         browser: browser || "",
-        videoId:window.location.pathname.split('/').pop()|| "",
+        videoId: window.location.pathname.split("/").pop() || "",
         sourceUrl: url,
       };
 
@@ -528,21 +502,28 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
             event.exited !== null ? formatTime(event.exited) : null,
         })),
       });
-      // Send analytics payload using fetch with keepalive.
+
       fetch(backendUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: payload,
-        keepalive: true,
-      }).catch((error) =>
-        console.error("Error sending analytics on unload:", error)
-      );
-    };
+      })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error("Network response was not ok");
+          }
+          return response.json();
+        })
+        .then((result) => {
+          console.log("Periodic video analytics data sent successfully:", result);
+        })
+        .catch((error) =>
+          console.error("Error sending periodic video analytics data:", error)
+        );
+    }, 15000);
 
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () =>
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [backendUrl, videoEl, playedSeconds]);
+    return () => clearInterval(interval);
+  }, [backendUrl, ip, location, userId, region, os, device, browser, url, videoEl, playedSeconds]);
 
   return (
     <div
