@@ -3,6 +3,7 @@ import { Worker, Viewer } from "@react-pdf-viewer/core";
 import "@react-pdf-viewer/core/lib/styles/index.css";
 import { useUser } from "../../context/Usercontext";
 
+
 const MyPdfViewer = ({ url, mimeType }) => {
   console.log(mimeType, "mimetype");
 
@@ -165,12 +166,12 @@ const MyPdfViewer = ({ url, mimeType }) => {
     (e) => {
       const newPage = e.currentPage + 1; // Get the new page number
       clearInterval(pageTimerRef.current);
-
+  
       // Initialize the time spent for the new page if it's not already tracked
       if (!timeSpentRef.current[newPage]) {
         timeSpentRef.current[newPage] = 0;
       }
-
+  
       // Start a timer to track the time spent on the page
       pageTimerRef.current = setInterval(() => {
         timeSpentRef.current[newPage] += 1;
@@ -183,24 +184,24 @@ const MyPdfViewer = ({ url, mimeType }) => {
           },
         }));
       }, 1000);
-
+  
       visitedPagesRef.current.add(newPage);
       const visitedPagesCount = visitedPagesRef.current.size;
-
+  
       if (visitedPagesCount >= milestoneVisitedPagesRef.current + 10) {
         milestoneVisitedPagesRef.current = Math.floor(visitedPagesCount / 10) * 10;
         console.log(`Visited Pages Milestone: ${milestoneVisitedPagesRef.current} pages visited.`);
       }
-
+  
       setAnalyticsData((prevData) => ({
         ...prevData,
         totalPagesVisited: visitedPagesCount,
       }));
-
+  
       // Track page visit count and calculate most visited page by time spent
       setPageVisitCount((prevCount) => {
         const newCount = { ...prevCount, [newPage]: (prevCount[newPage] || 0) + 1 };
-
+  
         // Calculate the most visited page by time spent
         let mostVisitedPage = null;
         let maxTimeSpent = 0;
@@ -210,26 +211,27 @@ const MyPdfViewer = ({ url, mimeType }) => {
             maxTimeSpent = time;
           }
         }
-
+  
         setAnalyticsData((prevData) => ({
           ...prevData,
           mostVisitedPage: mostVisitedPage, // Set the most visited page based on time spent
         }));
-
+  
         return newCount;
       });
-
+  
       setCurrentPage(newPage);
     },
     [setAnalyticsData]
   );
+  
 
   const handleTextSelection = useCallback(() => {
     const selectedText = window.getSelection().toString().trim();
     if (selectedText) {
       const truncatedText = selectedText.length > 300 ? selectedText.slice(0, 300) : selectedText;
 
-      console.log(`Selected Text on page ${currentPage}: "${truncatedText}"`);
+      console.log(`Selected Text on pageeeeeeeeeeeeeeeeeeeee ${currentPage}: "${truncatedText}"`);
 
       // Update selectedTexts array
       setSelectedTexts((prevSelectedTexts) => {
@@ -299,22 +301,42 @@ const MyPdfViewer = ({ url, mimeType }) => {
       console.error("Error sending analytics data:", error);
     }
   };
-
+  const isMobileDevice = () => {
+    return /Mobi|Android/i.test(window.navigator.userAgent);
+  };
+  
   const handleBeforeUnload = (e) => {
     if (leaveConfirmationRef.current) return;
-
+  
     leaveConfirmationRef.current = true;
-    e.preventDefault();
-    e.returnValue = "Are you sure you want to leave? Data will be sent to the server.";
-
-    // Send analytics data
-    sendAnalyticsData();
-
-    // Close the page after a 2-second delay
-    setTimeout(() => {
-      window.close(); // This will only work if the page was opened via JavaScript (window.open).
-    }, 2000);  // 2-second delay
+  
+    // Check if the device is mobile
+    if (isMobileDevice()) {
+      // For mobile devices, show an immediate alert
+      alert("You are leaving the page. Data will be sent to the server.");
+  
+      // Send analytics data immediately
+      sendAnalyticsData();
+  
+      // Close the page after a short delay for mobile users
+      setTimeout(() => {
+        window.close(); // This will only work if the page was opened via JavaScript (window.open).
+      }, 500);  // Short delay for mobile users (500ms)
+    } else {
+      // For non-mobile devices, show the confirmation dialog
+      e.preventDefault();
+      e.returnValue = "Are you sure you want to leave? Data will be sent to the server.";
+  
+      // Send analytics data before closing
+      sendAnalyticsData();
+  
+      // Close the page after a 2-second delay for non-mobile users
+      setTimeout(() => {
+        window.close(); // This will only work if the page was opened via JavaScript (window.open).
+      }, 2000);  // 2-second delay for desktop users
+    }
   };
+  
 
   const handlePopState = () => {
     if (leaveConfirmationRef.current) return;
@@ -329,20 +351,9 @@ const MyPdfViewer = ({ url, mimeType }) => {
       // Close the page after a 2-second delay
       setTimeout(() => {
         window.close(); // This will only work if the page was opened via JavaScript.
-      }, 5000);  // 5-second delay
+      }, 5000);  // 2-second delay
     }
   };
-
-  // Mobile device: send analytics data every 5 seconds
-  useEffect(() => {
-   
-      const interval = setInterval(() => {
-        sendAnalyticsData();
-      }, 5000);
-
-      return () => clearInterval(interval);
-    
-  }, [device, analyticsData, selectedTexts, totalClicks, linkClicks]);
 
   useEffect(() => {
     document.addEventListener("mouseup", handleTextSelection);
