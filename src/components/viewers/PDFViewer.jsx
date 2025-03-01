@@ -283,7 +283,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
     };
 
     try {
-      const response = await fetch("http://localhost:8000/api/PdfInfo/pdfpageinfo", {
+      const response = await fetch("https://filescene.onrender.com/api/PdfInfo/pdfpageinfo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(finalData),
