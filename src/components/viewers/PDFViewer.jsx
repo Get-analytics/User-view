@@ -56,7 +56,6 @@ const MyPdfViewer = ({ url, mimeType }) => {
   const sessionStorageUserId = sessionStorage.getItem("userId");
 
   // Function to extract the last part of the MIME type (e.g., "pdf" from "application/pdf")
-  // If mimeType is empty, return "unknown"
   const getMimeType = (mimeType) => {
     console.log(mimeType, "type of mime");
     return mimeType && mimeType.includes("/") ? mimeType.split("/").pop() : "unknown";
@@ -165,12 +164,12 @@ const MyPdfViewer = ({ url, mimeType }) => {
     (e) => {
       const newPage = e.currentPage + 1; // Get the new page number
       clearInterval(pageTimerRef.current);
-
+  
       // Initialize the time spent for the new page if it's not already tracked
       if (!timeSpentRef.current[newPage]) {
         timeSpentRef.current[newPage] = 0;
       }
-
+  
       // Start a timer to track the time spent on the page
       pageTimerRef.current = setInterval(() => {
         timeSpentRef.current[newPage] += 1;
@@ -183,24 +182,24 @@ const MyPdfViewer = ({ url, mimeType }) => {
           },
         }));
       }, 1000);
-
+  
       visitedPagesRef.current.add(newPage);
       const visitedPagesCount = visitedPagesRef.current.size;
-
+  
       if (visitedPagesCount >= milestoneVisitedPagesRef.current + 10) {
         milestoneVisitedPagesRef.current = Math.floor(visitedPagesCount / 10) * 10;
         console.log(`Visited Pages Milestone: ${milestoneVisitedPagesRef.current} pages visited.`);
       }
-
+  
       setAnalyticsData((prevData) => ({
         ...prevData,
         totalPagesVisited: visitedPagesCount,
       }));
-
+  
       // Track page visit count and calculate most visited page by time spent
       setPageVisitCount((prevCount) => {
         const newCount = { ...prevCount, [newPage]: (prevCount[newPage] || 0) + 1 };
-
+  
         // Calculate the most visited page by time spent
         let mostVisitedPage = null;
         let maxTimeSpent = 0;
@@ -210,15 +209,15 @@ const MyPdfViewer = ({ url, mimeType }) => {
             maxTimeSpent = time;
           }
         }
-
+  
         setAnalyticsData((prevData) => ({
           ...prevData,
           mostVisitedPage: mostVisitedPage, // Set the most visited page based on time spent
         }));
-
+  
         return newCount;
       });
-
+  
       setCurrentPage(newPage);
     },
     [setAnalyticsData]
@@ -333,6 +332,20 @@ const MyPdfViewer = ({ url, mimeType }) => {
     }
   };
 
+  const handleMobileLeave = () => {
+    if (/Mobi/i.test(navigator.userAgent)) {
+      leaveConfirmationRef.current = true;
+      // Show a custom modal for mobile devices
+      const confirmation = window.confirm(
+        "Are you sure you want to leave? Data will be sent to the server."
+      );
+
+      if (confirmation) {
+        sendAnalyticsData();
+      }
+    }
+  };
+
   useEffect(() => {
     document.addEventListener("mouseup", handleTextSelection);
     document.addEventListener("click", handleClick);
@@ -340,31 +353,26 @@ const MyPdfViewer = ({ url, mimeType }) => {
     window.addEventListener("beforeunload", handleBeforeUnload);
     window.addEventListener("popstate", handlePopState);
 
+    // Mobile-specific leave handling
+    window.addEventListener("hashchange", handleMobileLeave); // Detect mobile-specific back button behavior
+
     return () => {
       document.removeEventListener("mouseup", handleTextSelection);
       document.removeEventListener("click", handleClick);
-      document.removeEventListener("click", handleLinkClick); // Remove listener for link clicks
+      document.removeEventListener("click", handleLinkClick);
       window.removeEventListener("beforeunload", handleBeforeUnload);
       window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("hashchange", handleMobileLeave);
     };
-  }, [handleTextSelection, handleClick, handleLinkClick]);
-
-  if (!pdfjs || !pdfjsWorker) {
-    return <div>Loading...</div>;
-  }
+  }, [handleTextSelection, handleClick, handleLinkClick, handleBeforeUnload, handlePopState]);
 
   return (
-    <div style={{ height: "100vh", position: "relative" }}>
-      <h1 style={{ textAlign: "center", padding: "20px" }}>PDF Viewer</h1>
-      <Worker workerUrl={pdfjsWorker}>
-        <Viewer
-          fileUrl={fileUrl}
-          defaultScale={1.5}
-          renderMode="canvas"
-          onPageChange={handlePageChange}
-          plugins={[]}
-        />
-      </Worker>
+    <div>
+      {pdfjs && pdfjsWorker && (
+        <Worker workerUrl={pdfjsWorker}>
+          <Viewer fileUrl={fileUrl} onPageChange={handlePageChange} />
+        </Worker>
+      )}
     </div>
   );
 };
