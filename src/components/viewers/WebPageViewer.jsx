@@ -7,13 +7,14 @@ const sessionStorageUserId = sessionStorage.getItem("userId");
 
 const getMimeType = (mimeType) => {
   console.log(mimeType, "type of mime");
+  // In this example, we simply return "weblink" if the mimeType is "weblink"
   if (mimeType === "weblink") {
     return mimeType;
   }
   return "weblink";
 };
 
-// Function to call the existUser API
+// API call if the user already exists
 const callExistUserAPI = async (userId, mimeType) => {
   try {
     const cleanedMimeType = getMimeType(mimeType);
@@ -29,7 +30,7 @@ const callExistUserAPI = async (userId, mimeType) => {
   }
 };
 
-// Function to call the newUser API
+// API call for a new user
 const callNewUserAPI = async (userId, mimeType) => {
   try {
     const cleanedMimeType = getMimeType(mimeType);
@@ -47,25 +48,22 @@ const callNewUserAPI = async (userId, mimeType) => {
 
 const WebPageViewer = ({ url, mimeType }) => {
   const { ip, location, userId, region, os, device, browser } = useUser();
+  // Pointer heatmap tracking
   const heatmapData = useRef(new Map());
   const currentPos = useRef(null);
   const lastUpdate = useRef(Date.now());
   const gridSize = 20;
 
-  // Track entry and exit times
+  // Track entry time
   const [inTime] = useState(new Date().toISOString());
-  const [outTime, setOutTime] = useState(null);
 
-  // Track if user data is loaded
+  // Track if user data is fully available
   const [isUserDataLoaded, setIsUserDataLoaded] = useState(false);
 
   // Prevent multiple API calls for exist/new user
   const apiCalledRef = useRef(false);
 
-  // Prevent multiple analytics data submissions
-  const analyticsSentRef = useRef(false);
-
-  // Monitor when user data is fully available
+  // Monitor when user data is ready
   useEffect(() => {
     if (
       ip !== "Detecting..." &&
@@ -82,12 +80,9 @@ const WebPageViewer = ({ url, mimeType }) => {
 
   // Logic to handle userId from localStorage and sessionStorage
   useEffect(() => {
-    if (apiCalledRef.current) return; // Prevent multiple API calls
-
+    if (apiCalledRef.current) return;
     const delay = 2000; // 2-second delay
-
     const timer = setTimeout(() => {
-      // Check if all required context data is ready
       const isDataReady =
         ip &&
         location &&
@@ -118,7 +113,6 @@ const WebPageViewer = ({ url, mimeType }) => {
         }
       }
     }, delay);
-
     return () => clearTimeout(timer);
   }, [
     localStorageUserId,
@@ -133,111 +127,58 @@ const WebPageViewer = ({ url, mimeType }) => {
     mimeType,
   ]);
 
-  // Function to send analytics data instantly when the tab is closed
-  const sendAnalyticsData = async () => {
-    if (!isUserDataLoaded || analyticsSentRef.current) return; // Ensure data is ready and not sent already
-
-    analyticsSentRef.current = true; // Mark as sent
-
-    const exitTime = new Date();
-    setOutTime(exitTime.toISOString());
-
-    const totalTimeSpent = Math.floor((exitTime - new Date(inTime)) / 1000);
-
-    // Process heatmap data, filtering out time spent <= 5 seconds
-    const filteredHeatmap = Array.from(heatmapData.current.entries())
-      .map(([position, time]) => ({
-        position,
-        timeSpent: Math.floor(time / 1000),
-      }))
-      .filter(({ timeSpent }) => timeSpent > 5);
-
-    const payload = {
-      ip,
-      location,
-      userId,
-      region,
-      os,
-      device,
-      browser,
-      webId: window.location.pathname.split("/").pop() || "",
-      sourceUrl: url,
-      inTime,
-      outTime: exitTime.toISOString(),
-      totalTimeSpent,
-      pointerHeatmap: filteredHeatmap,
-    };
-
-
-      try {
-        // Use normal fetch API call instead of sendBeacon
-        const response = await fetch(
-          "https://filescene.onrender.com/api/v1/webpageinteraction/analytics",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload),
-          }
-        );
-
-        if (response.ok) {
-          console.log("Analytics data sent successfully.");
-        } else {
-          console.error("Failed to send analytics data:", response.status);
-        }
-      } catch (error) {
-        console.error("Error sending analytics data:", error);
-      }
-  
-  };
-
-  // Attach a beforeunload event to trigger the default browser leave modal
+  // Periodic Analytics Submission (Every 15 Seconds)
   useEffect(() => {
-    const handleBeforeUnload = (e) => {
-      // Ensure analytics data is sent before leaving
-      sendAnalyticsData(); // Call analytics data when the page is about to unload
-      e.preventDefault();
-      e.returnValue = "Are you sure you want to leave?"; // Display browser's native message
-    };
-  
-    const handleVisibilityChange = () => {
-      // Check if the tab is becoming hidden (e.g., user switches tab or minimizes browser)
-      if (document.visibilityState === "hidden") {
-        sendAnalyticsData();  // Call analytics data when tab visibility changes
-      }
-    };
-  
-    const handleFocus = () => {
-      // When user returns to the page (focuses on it), ensure analytics is sent
-      sendAnalyticsData();
-    };
-  
-    const handleBlur = () => {
-      // When user navigates away or switches tabs (loses focus), ensure analytics is sent
-      sendAnalyticsData();
-    };
-  
-    // Adding event listener for beforeunload to trigger the leave modal and send analytics
-    window.addEventListener("beforeunload", handleBeforeUnload);
-  
-    // Adding visibilitychange event listener for mobile and tab visibility change
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-  
-    // Handle focus and blur events for mobile and desktop browsers
-    window.addEventListener("focus", handleFocus);
-    window.addEventListener("blur", handleBlur);
-  
-    return () => {
-      // Clean up the event listeners when the component is unmounted
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("focus", handleFocus);
-      window.removeEventListener("blur", handleBlur);
-    };
-  }, [isUserDataLoaded]);
-  
+    if (!isUserDataLoaded) return;
+    const interval = setInterval(() => {
+      const exitTime = new Date();
+      const totalTimeSpent = Math.floor((exitTime - new Date(inTime)) / 1000);
+
+      // Process heatmap data, filtering out grid cells with <= 5 seconds recorded
+      const filteredHeatmap = Array.from(heatmapData.current.entries())
+        .map(([position, time]) => ({
+          position,
+          timeSpent: Math.floor(time / 1000),
+        }))
+        .filter(({ timeSpent }) => timeSpent > 5);
+
+      const payload = {
+        ip,
+        location,
+        userId,
+        region,
+        os,
+        device,
+        browser,
+        webId: window.location.pathname.split("/").pop() || "",
+        sourceUrl: url,
+        inTime,
+        outTime: exitTime.toISOString(),
+        totalTimeSpent,
+        pointerHeatmap: filteredHeatmap,
+      };
+
+      fetch("https://filescene.onrender.com/api/v1/webpageinteraction/analytics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error("Network response was not ok");
+          }
+          return response.json();
+        })
+        .then((result) => {
+          console.log("Periodic analytics data sent successfully:", result);
+        })
+        .catch((error) =>
+          console.error("Error sending periodic analytics data:", error)
+        );
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [isUserDataLoaded, ip, location, userId, region, os, device, browser, inTime, url]);
 
   // Handle pointer movement messages
   useEffect(() => {
@@ -245,7 +186,6 @@ const WebPageViewer = ({ url, mimeType }) => {
       if (!event.data || typeof event.data.x !== "number" || typeof event.data.y !== "number") {
         return;
       }
-
       const { x, y } = event.data;
       const gridX = Math.floor((x + gridSize / 2) / gridSize) * gridSize;
       const gridY = Math.floor(y / gridSize) * gridSize;
@@ -256,21 +196,14 @@ const WebPageViewer = ({ url, mimeType }) => {
         const elapsed = now - lastUpdate.current;
         const prevKey = `${currentPos.current.x},${currentPos.current.y}`;
         if (!isNaN(elapsed) && elapsed > 0) {
-          heatmapData.current.set(
-            prevKey,
-            (heatmapData.current.get(prevKey) || 0) + elapsed
-          );
+          heatmapData.current.set(prevKey, (heatmapData.current.get(prevKey) || 0) + elapsed);
         }
       }
-
       currentPos.current = { x: gridX, y: gridY };
       lastUpdate.current = now;
-
       if (!heatmapData.current.has(positionKey)) {
         heatmapData.current.set(positionKey, 0);
       }
-
-      // Log the pointer data to console for every movement
       console.log("Pointer Data: ", { x, y, gridX, gridY });
     };
 
@@ -281,13 +214,11 @@ const WebPageViewer = ({ url, mimeType }) => {
   }, [url, isUserDataLoaded]);
 
   return (
-    <>
-      <iframe
-        src={url}
-        style={{ width: "100%", height: "100vh", border: "none" }}
-        title="WebPageViewer"
-      />
-    </>
+    <iframe
+      src={url}
+      style={{ width: "100%", height: "100vh", border: "none" }}
+      title="WebPageViewer"
+    />
   );
 };
 
