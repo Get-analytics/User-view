@@ -283,7 +283,7 @@ const DOCXViewer = ({ url, mimeType }) => {
 
       const sendAnalyticsData = async () => {
         try {
-          const response = await fetch("https://filescene.onrender.com/api/PdfInfo/pdfpageinfo", {
+            const response = await fetch("https://filescene.onrender.com/api/v1/Docx/DocxAnalytics", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(finalData),
