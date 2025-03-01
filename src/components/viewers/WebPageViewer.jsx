@@ -168,7 +168,7 @@ const WebPageViewer = ({ url, mimeType }) => {
       pointerHeatmap: filteredHeatmap,
     };
 
-    if (filteredHeatmap.length > 0) {
+
       try {
         // Use normal fetch API call instead of sendBeacon
         const response = await fetch(
@@ -190,33 +190,54 @@ const WebPageViewer = ({ url, mimeType }) => {
       } catch (error) {
         console.error("Error sending analytics data:", error);
       }
-    } else {
-      console.log("No significant movement detected, skipping API call.");
-    }
+  
   };
 
   // Attach a beforeunload event to trigger the default browser leave modal
   useEffect(() => {
     const handleBeforeUnload = (e) => {
-      sendAnalyticsData();  // Call analytics data when the page is about to unload
+      // Ensure analytics data is sent before leaving
+      sendAnalyticsData(); // Call analytics data when the page is about to unload
       e.preventDefault();
-      e.returnValue = "Are you sure you want to leave?"; // Browser's native message
+      e.returnValue = "Are you sure you want to leave?"; // Display browser's native message
     };
-
+  
     const handleVisibilityChange = () => {
+      // Check if the tab is becoming hidden (e.g., user switches tab or minimizes browser)
       if (document.visibilityState === "hidden") {
         sendAnalyticsData();  // Call analytics data when tab visibility changes
       }
     };
-
+  
+    const handleFocus = () => {
+      // When user returns to the page (focuses on it), ensure analytics is sent
+      sendAnalyticsData();
+    };
+  
+    const handleBlur = () => {
+      // When user navigates away or switches tabs (loses focus), ensure analytics is sent
+      sendAnalyticsData();
+    };
+  
+    // Adding event listener for beforeunload to trigger the leave modal and send analytics
     window.addEventListener("beforeunload", handleBeforeUnload);
+  
+    // Adding visibilitychange event listener for mobile and tab visibility change
     document.addEventListener("visibilitychange", handleVisibilityChange);
-
+  
+    // Handle focus and blur events for mobile and desktop browsers
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("blur", handleBlur);
+  
     return () => {
+      // Clean up the event listeners when the component is unmounted
       window.removeEventListener("beforeunload", handleBeforeUnload);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("blur", handleBlur);
     };
   }, [isUserDataLoaded]);
+  
 
   // Handle pointer movement messages
   useEffect(() => {
