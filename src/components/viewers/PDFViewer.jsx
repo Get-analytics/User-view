@@ -73,7 +73,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
   const callExistUserAPI = async (userId, mimeType) => {
     try {
       const cleanedMimeType = getMimeType(mimeType);
-      const response = await fetch(https://filescene.onrender.com/api/test2/existUser", {
+      const response = await fetch("https://filescene.onrender.com/api/test2/existUser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, mimeType: cleanedMimeType }),
