@@ -3,11 +3,10 @@ import { Worker, Viewer } from "@react-pdf-viewer/core";
 import "@react-pdf-viewer/core/lib/styles/index.css";
 import { useUser } from "../../context/Usercontext";
 
-
 const DOCXViewer = ({ url, mimeType }) => {
   console.log(mimeType, "mimetype");
 
-  const { ip, location, userId, region, os, device, browser } = useUser(); // Extract context values
+  const { ip, location, userId, region, os, device, browser } = useUser();
   console.log(ip, location, userId, region, os, device, browser, "dataaaaaaa");
   console.log(window.location.pathname);
   console.log(userId, "userid");
@@ -15,21 +14,23 @@ const DOCXViewer = ({ url, mimeType }) => {
   const [pdfjs, setPdfjs] = useState(null);
   const [pdfjsWorker, setPdfjsWorker] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Refs for tracking page time, visited pages, and to prevent multiple API calls
   const timeSpentRef = useRef({});
   const pageTimerRef = useRef(null);
   const visitedPagesRef = useRef(new Set());
   const milestoneVisitedPagesRef = useRef(0);
+  const apiCalledRef = useRef(false);
+
+  // State variables for tracking analytics events
   const [totalClicks, setTotalClicks] = useState(0);
-  const [selectedTexts, setSelectedTexts] = useState([]); // Array to store selected texts
-  const [linkClicks, setLinkClicks] = useState([]); // Array to store link clicks
-  const [pageVisitCount, setPageVisitCount] = useState({}); // Track page visits
-  const scrollPercentageRef = useRef(0);
-  const leaveConfirmationRef = useRef(false); // To prevent multiple triggers
-  const apiCalledRef = useRef(false); // To track if API has been called
+  const [selectedTexts, setSelectedTexts] = useState([]);
+  const [linkClicks, setLinkClicks] = useState([]);
+  const [pageVisitCount, setPageVisitCount] = useState({});
 
   const fileUrl = url;
 
-  // Initialize analyticsData with context values
+  // Initialize analyticsData with context and PDF info
   const [analyticsData, setAnalyticsData] = useState({
     ip: ip || "",
     location: location || "",
@@ -43,27 +44,32 @@ const DOCXViewer = ({ url, mimeType }) => {
     totalPagesVisited: 0,
     totalTimeSpent: 0,
     pageTimeSpent: {},
-    selectedTexts: [], // Array to store selected texts with count and page
+    selectedTexts: [],
     totalClicks: 0,
-    inTime: new Date().toISOString(), // Login time in ISO format
-    outTime: null, // Logout time will be set when the user leaves
-    mostVisitedPage: null, // Most visited page will be set later
-    linkClicks: [], // Array to store link clicks
-    totalPages: 0, // Add totalPages field
+    inTime: new Date().toISOString(),
+    outTime: null,
+    mostVisitedPage: null,
+    linkClicks: [],
+    totalPages: 0,
   });
 
-  // Fetch userId from localStorage and sessionStorage
+  // Create a ref to store the latest analytics data
+  const analyticsDataRef = useRef(analyticsData);
+  useEffect(() => {
+    analyticsDataRef.current = analyticsData;
+  }, [analyticsData, selectedTexts, totalClicks, linkClicks]);
+
+  // Get userId from localStorage and sessionStorage
   const localStorageUserId = localStorage.getItem("userId");
   const sessionStorageUserId = sessionStorage.getItem("userId");
 
   // Function to extract the last part of the MIME type (e.g., "pdf" from "application/pdf")
-  // If mimeType is empty, return "unknown"
   const getMimeType = (mimeType) => {
     console.log(mimeType, "type of mime");
     return mimeType && mimeType.includes("/") ? mimeType.split("/").pop() : "unknown";
   };
 
-  // Function to call the existUser API
+  // API call if the user already exists
   const callExistUserAPI = async (userId, mimeType) => {
     try {
       const cleanedMimeType = getMimeType(mimeType);
@@ -79,7 +85,7 @@ const DOCXViewer = ({ url, mimeType }) => {
     }
   };
 
-  // Function to call the newUser API
+  // API call for a new user
   const callNewUserAPI = async (userId, mimeType) => {
     try {
       const cleanedMimeType = getMimeType(mimeType);
@@ -95,14 +101,12 @@ const DOCXViewer = ({ url, mimeType }) => {
     }
   };
 
-  // Logic to handle userId from localStorage and sessionStorage
+  // Handle userId API calls based on localStorage and sessionStorage
   useEffect(() => {
-    if (apiCalledRef.current) return; // Prevent multiple API calls
-
+    if (apiCalledRef.current) return;
     const delay = 1000; // 1-second delay
 
     const timer = setTimeout(() => {
-      // Check if all required context data is ready
       const isDataReady =
         ip &&
         location &&
@@ -120,23 +124,20 @@ const DOCXViewer = ({ url, mimeType }) => {
         !browser.includes("Detecting");
 
       if (localStorageUserId && sessionStorageUserId && localStorageUserId === sessionStorageUserId) {
-        // Both values exist and are the same
         callExistUserAPI(localStorageUserId, mimeType);
-        apiCalledRef.current = true; // Mark API as called
+        apiCalledRef.current = true;
       } else if (!localStorageUserId && !sessionStorageUserId) {
-        // Both values are empty
         if (isDataReady && userId) {
-          callNewUserAPI(userId, mimeType); // Use userId from useUser context
-          apiCalledRef.current = true; // Mark API as called
+          callNewUserAPI(userId, mimeType);
+          apiCalledRef.current = true;
         }
       }
     }, delay);
 
-    // Cleanup the timer if the component unmounts or dependencies change
     return () => clearTimeout(timer);
   }, [localStorageUserId, sessionStorageUserId, userId, ip, location, region, os, device, browser]);
 
-  // Update analyticsData when context values change
+  // Update analyticsData if context values change
   useEffect(() => {
     setAnalyticsData((prevData) => ({
       ...prevData,
@@ -150,6 +151,7 @@ const DOCXViewer = ({ url, mimeType }) => {
     }));
   }, [ip, location, userId, region, os, device, browser]);
 
+  // Dynamically load pdfjs and its worker
   useEffect(() => {
     const loadPdfjs = async () => {
       const pdfjsModule = await import("pdfjs-dist/build/pdf");
@@ -158,21 +160,19 @@ const DOCXViewer = ({ url, mimeType }) => {
       setPdfjs(pdfjsModule);
       setPdfjsWorker(pdfjsWorkerModule);
     };
-
     loadPdfjs();
   }, []);
 
+  // Handle page changes: track time spent, visited pages, and calculate the most visited page
   const handlePageChange = useCallback(
     (e) => {
-      const newPage = e.currentPage + 1; // Get the new page number
+      const newPage = e.currentPage + 1; // Pages are zero-indexed in the event
       clearInterval(pageTimerRef.current);
-  
-      // Initialize the time spent for the new page if it's not already tracked
+
       if (!timeSpentRef.current[newPage]) {
         timeSpentRef.current[newPage] = 0;
       }
-  
-      // Start a timer to track the time spent on the page
+
       pageTimerRef.current = setInterval(() => {
         timeSpentRef.current[newPage] += 1;
         setAnalyticsData((prevData) => ({
@@ -184,25 +184,22 @@ const DOCXViewer = ({ url, mimeType }) => {
           },
         }));
       }, 1000);
-  
+
       visitedPagesRef.current.add(newPage);
       const visitedPagesCount = visitedPagesRef.current.size;
-  
+
       if (visitedPagesCount >= milestoneVisitedPagesRef.current + 10) {
         milestoneVisitedPagesRef.current = Math.floor(visitedPagesCount / 10) * 10;
         console.log(`Visited Pages Milestone: ${milestoneVisitedPagesRef.current} pages visited.`);
       }
-  
+
       setAnalyticsData((prevData) => ({
         ...prevData,
         totalPagesVisited: visitedPagesCount,
       }));
-  
-      // Track page visit count and calculate most visited page by time spent
+
       setPageVisitCount((prevCount) => {
         const newCount = { ...prevCount, [newPage]: (prevCount[newPage] || 0) + 1 };
-  
-        // Calculate the most visited page by time spent
         let mostVisitedPage = null;
         let maxTimeSpent = 0;
         for (const [page, time] of Object.entries(timeSpentRef.current)) {
@@ -211,143 +208,109 @@ const DOCXViewer = ({ url, mimeType }) => {
             maxTimeSpent = time;
           }
         }
-  
         setAnalyticsData((prevData) => ({
           ...prevData,
-          mostVisitedPage: mostVisitedPage, // Set the most visited page based on time spent
+          mostVisitedPage: mostVisitedPage,
         }));
-  
         return newCount;
       });
-  
+
       setCurrentPage(newPage);
     },
     [setAnalyticsData]
   );
-  
 
+  // Track text selection on the PDF
   const handleTextSelection = useCallback(() => {
     const selectedText = window.getSelection().toString().trim();
     if (selectedText) {
       const truncatedText = selectedText.length > 300 ? selectedText.slice(0, 300) : selectedText;
+      console.log(`Selected Text on page ${currentPage}: "${truncatedText}"`);
 
-      console.log(`Selected Text on pageeeeeeeeeeeeeeeeeeeee ${currentPage}: "${truncatedText}"`);
-
-      // Update selectedTexts array
       setSelectedTexts((prevSelectedTexts) => {
-        const existingText = prevSelectedTexts.find((item) => item.selectedText === truncatedText && item.page === currentPage);
-
+        const existingText = prevSelectedTexts.find(
+          (item) => item.selectedText === truncatedText && item.page === currentPage
+        );
         if (existingText) {
-          // If the text already exists, increment the count
           return prevSelectedTexts.map((item) =>
             item.selectedText === truncatedText && item.page === currentPage
               ? { ...item, count: item.count + 1 }
               : item
           );
         } else {
-          // If the text is new, add it to the array with the current page
           return [...prevSelectedTexts, { selectedText: truncatedText, count: 1, page: currentPage }];
         }
       });
     }
   }, [currentPage]);
 
-  const handleLinkClick = useCallback((e) => {
-    const linkElement = e.target.closest("a");
-    if (linkElement) {
-      e.preventDefault(); // Prevent default link behavior
-      const linkUrl = linkElement.href;
-      console.log(`Link clicked on page ${currentPage}: ${linkUrl}`);
+  // Intercept and track link clicks inside the PDF
+  const handleLinkClick = useCallback(
+    (e) => {
+      const linkElement = e.target.closest("a");
+      if (linkElement) {
+        e.preventDefault();
+        const linkUrl = linkElement.href;
+        console.log(`Link clicked on page ${currentPage}: ${linkUrl}`);
+        window.open(linkUrl, "_blank");
+        setLinkClicks((prevLinkClicks) => [
+          ...prevLinkClicks,
+          { page: currentPage, clickedLink: linkUrl },
+        ]);
+      }
+    },
+    [currentPage]
+  );
 
-      // Open the link in a new tab
-      window.open(linkUrl, "_blank");
-
-      // Track the link click
-      setLinkClicks((prevLinkClicks) => [
-        ...prevLinkClicks,
-        { page: currentPage, clickedLink: linkUrl },
-      ]);
-    }
-  }, [currentPage]);
-
-  const handleClick = useCallback((e) => {
+  // General click handler to increment the click count
+  const handleClick = useCallback(() => {
     setTotalClicks((prev) => prev + 1);
   }, []);
 
-  const sendAnalyticsData = async () => {
-    const finalData = {
-      ...analyticsData,
-      outTime: new Date().toISOString(), // Logout time in ISO format
-      userId: userId,
-      selectedTexts: selectedTexts, // Include selected texts array
-      totalClicks: totalClicks,
-      linkClicks: linkClicks, // Include link clicks array
-    };
+  // Set up a periodic timer to send analytics data every 15 seconds.
+  // To ensure we always send the latest data (even if analyticsData has changed),
+  // we use the analyticsDataRef which is updated on every change.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const finalData = {
+        ...analyticsDataRef.current,
+        outTime: new Date().toISOString(),
+        userId: userId,
+        selectedTexts: selectedTexts,
+        totalClicks: totalClicks,
+        linkClicks: linkClicks,
+      };
 
-    try {
-      const response = await fetch("https://filescene.onrender.com/api/v1/Docx/DocxAnalytics", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(finalData),
-      });
-
-      if (!response.ok) {
-        throw new Error("Network response was not ok");
-      }
-
-      const result = await response.json();
-      console.log("Data sent successfully:", result);
-    } catch (error) {
-      console.error("Error sending analytics data:", error);
-    }
-  };
-
-  const handleBeforeUnload = (e) => {
-    if (leaveConfirmationRef.current) return;
-
-    leaveConfirmationRef.current = true;
-    e.preventDefault();
-    e.returnValue = "Are you sure you want to leave? Data will be sent to the server.";
-
-    // Send analytics data
-    sendAnalyticsData();
-
-    // Close the page after a 2-second delay
-    setTimeout(() => {
-      window.close(); // This will only work if the page was opened via JavaScript (window.open).
-    }, 2000);  // 2-second delay
-  };
-
-  const handlePopState = () => {
-    if (leaveConfirmationRef.current) return;
-
-    leaveConfirmationRef.current = true;
-    const confirmation = window.confirm("Are you sure you want to leave? Data will be sent to the server.");
-
-    if (confirmation) {
-      // Send analytics data
+      const sendAnalyticsData = async () => {
+        try {
+          const response = await fetch("https://filescene.onrender.com/api/PdfInfo/pdfpageinfo", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(finalData),
+          });
+          if (!response.ok) throw new Error("Network response was not ok");
+          const result = await response.json();
+          console.log("Periodic analytics data sent successfully:", result);
+        } catch (error) {
+          console.error("Error sending periodic analytics data:", error);
+        }
+      };
       sendAnalyticsData();
+    }, 15000);
 
-      // Close the page after a 2-second delay
-      setTimeout(() => {
-        window.close(); // This will only work if the page was opened via JavaScript.
-      }, 5000);  // 2-second delay
-    }
-  };
+    return () => clearInterval(interval);
+  }, [userId, selectedTexts, totalClicks, linkClicks]);
 
+  // Set up event listeners for text selection and general clicks
   useEffect(() => {
     document.addEventListener("mouseup", handleTextSelection);
     document.addEventListener("click", handleClick);
-    document.addEventListener("click", handleLinkClick); // Add listener for link clicks
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    window.addEventListener("popstate", handlePopState);
+    document.addEventListener("click", handleLinkClick);
 
     return () => {
       document.removeEventListener("mouseup", handleTextSelection);
       document.removeEventListener("click", handleClick);
-      document.removeEventListener("click", handleLinkClick); // Remove listener for link clicks
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      window.removeEventListener("popstate", handlePopState);
+      document.removeEventListener("click", handleLinkClick);
     };
   }, [handleTextSelection, handleClick, handleLinkClick]);
 
