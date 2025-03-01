@@ -335,13 +335,13 @@ const MyPdfViewer = ({ url, mimeType }) => {
 
   // Mobile device: send analytics data every 5 seconds
   useEffect(() => {
-    if (device === "mobile") {
+   
       const interval = setInterval(() => {
         sendAnalyticsData();
       }, 5000);
 
       return () => clearInterval(interval);
-    }
+    
   }, [device, analyticsData, selectedTexts, totalClicks, linkClicks]);
 
   useEffect(() => {
