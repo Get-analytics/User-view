@@ -26,8 +26,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
 
   // Function to extract the last part of the MIME type (e.g., "mp4" from "video/mp4")
   const getMimeType = (mimeType) => {
-    console.log(mimeType, "type of mime");
-    return mimeType && mimeType.includes("/") ? mimeType.split("/").pop() : "unknown";
+   return "video"
   };
 
   // API call if the user already exists
@@ -50,7 +49,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
   const callNewUserAPI = async (userId, mimeType) => {
     try {
       const cleanedMimeType = getMimeType(mimeType);
-      const response = await fetch("https://filescene.onrender.com/com/api/test1/newUser", {
+      const response = await fetch("https://filescene.onrender.com/api/test1/newUser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, mimeType: cleanedMimeType }),
@@ -88,7 +87,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
         callExistUserAPI(localStorageUserId, mimeType);
         apiCalledRef.current = true;
       } else if (!localStorageUserId && !sessionStorageUserId) {
-        if (isDataReady && userId) {
+        if ( userId) {
           callNewUserAPI(userId, mimeType);
           apiCalledRef.current = true;
         }
