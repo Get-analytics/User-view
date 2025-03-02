@@ -66,7 +66,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
   // Function to extract the last part of the MIME type (e.g., "pdf" from "application/pdf")
   const getMimeType = (mimeType) => {
     console.log(mimeType, "type of mime");
-    return mimeType && mimeType.includes("/") ? mimeType.split("/").pop() : "unknown";
+    return "pdf";
   };
 
   // API call if the user already exists
