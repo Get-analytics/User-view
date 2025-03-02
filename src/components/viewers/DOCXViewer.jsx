@@ -302,18 +302,22 @@ const DOCXViewer = ({ url, mimeType }) => {
   }, [userId, selectedTexts, totalClicks, linkClicks]);
 
   // Set up event listeners for text selection and general clicks
+    // Set up event listeners for text selection and general clicks
   useEffect(() => {
+    // Listen for both mouseup and touchend events
     document.addEventListener("mouseup", handleTextSelection);
+    document.addEventListener("touchend", handleTextSelection);
     document.addEventListener("click", handleClick);
     document.addEventListener("click", handleLinkClick);
-
+  
     return () => {
       document.removeEventListener("mouseup", handleTextSelection);
+      document.removeEventListener("touchend", handleTextSelection);
       document.removeEventListener("click", handleClick);
       document.removeEventListener("click", handleLinkClick);
     };
   }, [handleTextSelection, handleClick, handleLinkClick]);
-
+  
   if (!pdfjs || !pdfjsWorker) {
     return <div>Loading...</div>;
   }
