@@ -66,7 +66,7 @@ const DOCXViewer = ({ url, mimeType }) => {
   // Function to extract the last part of the MIME type (e.g., "pdf" from "application/pdf")
   const getMimeType = (mimeType) => {
     console.log(mimeType, "type of mime");
-    return mimeType && mimeType.includes("/") ? mimeType.split("/").pop() : "unknown";
+    return "docx";
   };
 
   // API call if the user already exists
@@ -283,7 +283,7 @@ const DOCXViewer = ({ url, mimeType }) => {
 
       const sendAnalyticsData = async () => {
         try {
-            const response = await fetch("https://filescene.onrender.com/api/v1/Docx/DocxAnalytics", {
+          const response = await fetch("https://filescene.onrender.com/api/v1/Docx/DocxAnalytics", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(finalData),
@@ -302,22 +302,18 @@ const DOCXViewer = ({ url, mimeType }) => {
   }, [userId, selectedTexts, totalClicks, linkClicks]);
 
   // Set up event listeners for text selection and general clicks
-    // Set up event listeners for text selection and general clicks
   useEffect(() => {
-    // Listen for both mouseup and touchend events
     document.addEventListener("mouseup", handleTextSelection);
-    document.addEventListener("touchend", handleTextSelection);
     document.addEventListener("click", handleClick);
     document.addEventListener("click", handleLinkClick);
-  
+
     return () => {
       document.removeEventListener("mouseup", handleTextSelection);
-      document.removeEventListener("touchend", handleTextSelection);
       document.removeEventListener("click", handleClick);
       document.removeEventListener("click", handleLinkClick);
     };
   }, [handleTextSelection, handleClick, handleLinkClick]);
-  
+
   if (!pdfjs || !pdfjsWorker) {
     return <div>Loading...</div>;
   }
