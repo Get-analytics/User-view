@@ -3,7 +3,7 @@ import { Worker, Viewer } from "@react-pdf-viewer/core";
 import "@react-pdf-viewer/core/lib/styles/index.css";
 import { useUser } from "../../context/Usercontext";
 
-const DOCXViewer = ({ url, mimeType }) => {
+const MyPdfViewer = ({ url, mimeType }) => {
   console.log(mimeType, "mimetype");
 
   const { ip, location, userId, region, os, device, browser } = useUser();
@@ -63,43 +63,40 @@ const DOCXViewer = ({ url, mimeType }) => {
   const localStorageUserId = localStorage.getItem("userId");
   const sessionStorageUserId = sessionStorage.getItem("userId");
 
-  // Function to extract the last part of the MIME type (e.g., "pdf" from "application/pdf")
-  const getMimeType = (mimeType) => {
-    console.log(mimeType, "type of mime");
-    return "docx";
-  };
+   // Send API request with userId and pdfId for identification
+ // Identification API call: fires once after 3 seconds if userId is valid.
+ const sendIdentificationRequest = useCallback(async () => {
+  if (!userId || !window.location.pathname) return;
 
-  // API call if the user already exists
-  const callExistUserAPI = async (userId, mimeType) => {
-    try {
-      const cleanedMimeType = getMimeType(mimeType);
-      const response = await fetch("https://filescene.onrender.com/api/test2/existUser", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, mimeType: cleanedMimeType }),
-      });
-      if (!response.ok) throw new Error("Failed to call existUser API");
-      console.log("existUser API called successfully");
-    } catch (error) {
-      console.error("Error calling existUser API:", error);
-    }
-  };
+  const documentId = window.location.pathname.split("/").pop();
+  const requestData = { userId, documentId, mimeType: "docx" };
 
-  // API call for a new user
-  const callNewUserAPI = async (userId, mimeType) => {
-    try {
-      const cleanedMimeType = getMimeType(mimeType);
-      const response = await fetch("https://filescene.onrender.com/api/test1/newUser", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, mimeType: cleanedMimeType }),
-      });
-      if (!response.ok) throw new Error("Failed to call newUser API");
-      console.log("newUser API called successfully");
-    } catch (error) {
-      console.error("Error calling newUser API:", error);
+  try {
+    const response = await fetch("https://filescene.onrender.com/api/user/identify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestData),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to identify user");
     }
-  };
+    const result = await response.json();
+    console.log("User identification successful:", result);
+  } catch (error) {
+    console.error("Error sending identification request:", error);
+  }
+}, [userId]);
+
+useEffect(() => {
+  if (userId && userId.length > 15 && !apiCalledRef.current) {
+    const timer = setTimeout(() => {
+      sendIdentificationRequest();
+      apiCalledRef.current = true;
+    }, 3000); // 3-second delay
+
+    return () => clearTimeout(timer);
+  }
+}, [userId, sendIdentificationRequest]);
 
   // Handle userId API calls based on localStorage and sessionStorage
   useEffect(() => {
@@ -124,11 +121,11 @@ const DOCXViewer = ({ url, mimeType }) => {
         !browser.includes("Detecting");
 
       if (localStorageUserId && sessionStorageUserId && localStorageUserId === sessionStorageUserId) {
-        callExistUserAPI(localStorageUserId, mimeType);
+     
         apiCalledRef.current = true;
       } else if (!localStorageUserId && !sessionStorageUserId) {
         if (isDataReady && userId) {
-          callNewUserAPI(userId, mimeType);
+         
           apiCalledRef.current = true;
         }
       }
@@ -303,16 +300,20 @@ const DOCXViewer = ({ url, mimeType }) => {
 
   // Set up event listeners for text selection and general clicks
   useEffect(() => {
+    // Listen for both mouseup and touchend events
     document.addEventListener("mouseup", handleTextSelection);
+    document.addEventListener("touchend", handleTextSelection);
     document.addEventListener("click", handleClick);
     document.addEventListener("click", handleLinkClick);
-
+  
     return () => {
       document.removeEventListener("mouseup", handleTextSelection);
+      document.removeEventListener("touchend", handleTextSelection);
       document.removeEventListener("click", handleClick);
       document.removeEventListener("click", handleLinkClick);
     };
   }, [handleTextSelection, handleClick, handleLinkClick]);
+  
 
   if (!pdfjs || !pdfjsWorker) {
     return <div>Loading...</div>;
@@ -320,7 +321,7 @@ const DOCXViewer = ({ url, mimeType }) => {
 
   return (
     <div style={{ height: "100vh", position: "relative" }}>
-      <h1 style={{ textAlign: "center", padding: "20px" }}>Docx Viewer</h1>
+      <h1 style={{ textAlign: "center", padding: "20px" }}>DOCX Viewer</h1>
       <Worker workerUrl={pdfjsWorker}>
         <Viewer
           fileUrl={fileUrl}
@@ -334,4 +335,4 @@ const DOCXViewer = ({ url, mimeType }) => {
   );
 };
 
-export default DOCXViewer;
+export default MyPdfViewer;
