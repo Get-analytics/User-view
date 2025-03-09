@@ -1,53 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useUser } from "../../context/Usercontext";
-
-// Fetch userId from localStorage and sessionStorage
-const localStorageUserId = localStorage.getItem("userId");
-const sessionStorageUserId = sessionStorage.getItem("userId");
-
-const getMimeType = (mimeType) => {
-  console.log(mimeType, "type of mime");
-  // In this example, we simply return "weblink" if the mimeType is "weblink"
-  if (mimeType === "weblink") {
-    return mimeType;
-  }
-  return "weblink";
-};
-
-// API call if the user already exists
-const callExistUserAPI = async (userId, mimeType) => {
-  try {
-    const cleanedMimeType = getMimeType(mimeType);
-    const response = await fetch("https://filescene.onrender.com/api/test2/existUser", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, mimeType: cleanedMimeType }),
-    });
-    if (!response.ok) throw new Error("Failed to call existUser API");
-    console.log("existUser API called successfully");
-  } catch (error) {
-    console.error("Error calling existUser API:", error);
-  }
-};
-
-// API call for a new user
-const callNewUserAPI = async (userId, mimeType) => {
-  try {
-    const cleanedMimeType = getMimeType(mimeType);
-    const response = await fetch("https://filescene.onrender.com/api/test1/newUser", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, mimeType: cleanedMimeType }),
-    });
-    if (!response.ok) throw new Error("Failed to call newUser API");
-    console.log("newUser API called successfully");
-  } catch (error) {
-    console.error("Error calling newUser API:", error);
-  }
-};
 
 const WebPageViewer = ({ url, mimeType }) => {
   const { ip, location, userId, region, os, device, browser } = useUser();
+  console.log(ip, location, userId, region, os, device, browser, "dataaaaaaa");
+  console.log(window.location.pathname);
+  console.log(userId, "userid");
+
   // Pointer heatmap tracking
   const heatmapData = useRef(new Map());
   const currentPos = useRef(null);
@@ -60,7 +19,7 @@ const WebPageViewer = ({ url, mimeType }) => {
   // Track if user data is fully available
   const [isUserDataLoaded, setIsUserDataLoaded] = useState(false);
 
-  // Prevent multiple API calls for exist/new user
+  // Prevent multiple API calls for identification
   const apiCalledRef = useRef(false);
 
   // Monitor when user data is ready
@@ -78,54 +37,39 @@ const WebPageViewer = ({ url, mimeType }) => {
     }
   }, [ip, location, userId, region, os, device, browser]);
 
-  // Logic to handle userId from localStorage and sessionStorage
-  useEffect(() => {
-    if (apiCalledRef.current) return;
-    const delay = 2000; // 2-second delay
-    const timer = setTimeout(() => {
-      const isDataReady =
-        ip &&
-        location &&
-        userId &&
-        region &&
-        os &&
-        device &&
-        browser &&
-        !ip.includes("Detecting") &&
-        !location.includes("Detecting") &&
-        !userId.includes("Detecting") &&
-        !region.includes("Detecting") &&
-        !os.includes("Detecting") &&
-        !device.includes("Detecting") &&
-        !browser.includes("Detecting");
+  // Identification API call: fires once after 3 seconds if userId is valid.
+  const sendIdentificationRequest = useCallback(async () => {
+    if (!userId || !window.location.pathname) return;
 
-      if (
-        localStorageUserId &&
-        sessionStorageUserId &&
-        localStorageUserId === sessionStorageUserId
-      ) {
-        callExistUserAPI(localStorageUserId, mimeType);
-        apiCalledRef.current = true;
-      } else if (!localStorageUserId && !sessionStorageUserId) {
-        if (isDataReady && userId) {
-          callNewUserAPI(userId, mimeType);
-          apiCalledRef.current = true;
-        }
+    const documentId = window.location.pathname.split("/").pop();
+    const requestData = { userId, documentId, mimeType: "weblink" };
+
+    try {
+      const response = await fetch("https://filescene.onrender.com/api/user/identify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestData),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to identify user");
       }
-    }, delay);
-    return () => clearTimeout(timer);
-  }, [
-    localStorageUserId,
-    sessionStorageUserId,
-    userId,
-    ip,
-    location,
-    region,
-    os,
-    device,
-    browser,
-    mimeType,
-  ]);
+      const result = await response.json();
+      console.log("User identification successful:", result);
+    } catch (error) {
+      console.error("Error sending identification request:", error);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    if (userId && userId.length > 15 && !apiCalledRef.current) {
+      const timer = setTimeout(() => {
+        sendIdentificationRequest();
+        apiCalledRef.current = true;
+      }, 3000); // 3-second delay
+
+      return () => clearTimeout(timer);
+    }
+  }, [userId, sendIdentificationRequest]);
 
   // Periodic Analytics Submission (Every 15 Seconds)
   useEffect(() => {
