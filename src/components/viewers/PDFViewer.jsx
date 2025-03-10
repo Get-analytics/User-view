@@ -72,7 +72,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
   const requestData = { userId, documentId, mimeType: "pdf" };
 
   try {
-    const response = await fetch("http://localhost:8000/api/user/identify", {
+    const response = await fetch("https://filescene.onrender.com/api/user/identify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestData),
@@ -280,7 +280,7 @@ useEffect(() => {
 
       const sendAnalyticsData = async () => {
         try {
-          const response = await fetch("http://localhost:8000/api/PdfInfo/pdfpageinfo", {
+          const response = await fetch("https://filescene.onrender.com/api/PdfInfo/pdfpageinfo", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(finalData),
