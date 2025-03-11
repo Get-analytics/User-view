@@ -30,7 +30,8 @@ const MyPdfViewer = ({ url, mimeType }) => {
 
   const fileUrl = url;
 
-  // Initialize analyticsData with context and PDF info
+  // Set up initial analytics data.
+  // inTime is set once at initial load and remains constant.
   const [analyticsData, setAnalyticsData] = useState({
     ip: ip || "",
     location: location || "",
@@ -46,14 +47,14 @@ const MyPdfViewer = ({ url, mimeType }) => {
     pageTimeSpent: {},
     selectedTexts: [],
     totalClicks: 0,
-    inTime: new Date().toISOString(),
+    inTime: new Date().toISOString(), // First load timestamp (never updated)
     outTime: null,
     mostVisitedPage: null,
     linkClicks: [],
     totalPages: 0,
   });
 
-  // Create a ref to store the latest analytics data
+  // Create a ref to store the latest analytics data.
   const analyticsDataRef = useRef(analyticsData);
   useEffect(() => {
     analyticsDataRef.current = analyticsData;
@@ -63,40 +64,39 @@ const MyPdfViewer = ({ url, mimeType }) => {
   const localStorageUserId = localStorage.getItem("userId");
   const sessionStorageUserId = sessionStorage.getItem("userId");
 
-   // Send API request with userId and pdfId for identification
- // Identification API call: fires once after 3 seconds if userId is valid.
- const sendIdentificationRequest = useCallback(async () => {
-  if (!userId || !window.location.pathname) return;
+  // Identification API call: fires once after 3 seconds if userId is valid.
+  const sendIdentificationRequest = useCallback(async () => {
+    if (!userId || !window.location.pathname) return;
 
-  const documentId = window.location.pathname.split("/").pop();
-  const requestData = { userId, documentId, mimeType: "pdf" };
+    const documentId = window.location.pathname.split("/").pop();
+    const requestData = { userId, documentId, mimeType: "pdf" };
 
-  try {
-    const response = await fetch("https://filescene.onrender.com/api/user/identify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestData),
-    });
-    if (!response.ok) {
-      throw new Error("Failed to identify user");
+    try {
+      const response = await fetch("https://filescene.onrender.com/api/user/identify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestData),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to identify user");
+      }
+      const result = await response.json();
+      console.log("User identification successful:", result);
+    } catch (error) {
+      console.error("Error sending identification request:", error);
     }
-    const result = await response.json();
-    console.log("User identification successful:", result);
-  } catch (error) {
-    console.error("Error sending identification request:", error);
-  }
-}, [userId]);
+  }, [userId]);
 
-useEffect(() => {
-  if (userId && userId.length > 15 && !apiCalledRef.current) {
-    const timer = setTimeout(() => {
-      sendIdentificationRequest();
-      apiCalledRef.current = true;
-    }, 3000); // 3-second delay
+  useEffect(() => {
+    if (userId && userId.length > 15 && !apiCalledRef.current) {
+      const timer = setTimeout(() => {
+        sendIdentificationRequest();
+        apiCalledRef.current = true;
+      }, 3000); // 3-second delay
 
-    return () => clearTimeout(timer);
-  }
-}, [userId, sendIdentificationRequest]);
+      return () => clearTimeout(timer);
+    }
+  }, [userId, sendIdentificationRequest]);
 
   // Handle userId API calls based on localStorage and sessionStorage
   useEffect(() => {
@@ -121,11 +121,9 @@ useEffect(() => {
         !browser.includes("Detecting");
 
       if (localStorageUserId && sessionStorageUserId && localStorageUserId === sessionStorageUserId) {
-     
         apiCalledRef.current = true;
       } else if (!localStorageUserId && !sessionStorageUserId) {
         if (isDataReady && userId) {
-         
           apiCalledRef.current = true;
         }
       }
@@ -264,13 +262,14 @@ useEffect(() => {
     setTotalClicks((prev) => prev + 1);
   }, []);
 
-  // Set up a periodic timer to send analytics data every 15 seconds.
-  // To ensure we always send the latest data (even if analyticsData has changed),
-  // we use the analyticsDataRef which is updated on every change.
+  // Periodically send analytics data every 15 seconds.
+  // Here, we set outTime to the current time at each payload,
+  // while inTime remains as the initial load timestamp.
   useEffect(() => {
     const interval = setInterval(() => {
       const finalData = {
         ...analyticsDataRef.current,
+        // Set outTime to the current time for every payload
         outTime: new Date().toISOString(),
         userId: userId,
         selectedTexts: selectedTexts,
@@ -300,12 +299,11 @@ useEffect(() => {
 
   // Set up event listeners for text selection and general clicks
   useEffect(() => {
-    // Listen for both mouseup and touchend events
     document.addEventListener("mouseup", handleTextSelection);
     document.addEventListener("touchend", handleTextSelection);
     document.addEventListener("click", handleClick);
     document.addEventListener("click", handleLinkClick);
-  
+
     return () => {
       document.removeEventListener("mouseup", handleTextSelection);
       document.removeEventListener("touchend", handleTextSelection);
@@ -313,7 +311,6 @@ useEffect(() => {
       document.removeEventListener("click", handleLinkClick);
     };
   }, [handleTextSelection, handleClick, handleLinkClick]);
-  
 
   if (!pdfjs || !pdfjsWorker) {
     return <div>Loading...</div>;
