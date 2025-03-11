@@ -19,82 +19,43 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
   console.log(window.location.pathname, "videoId from path");
   console.log(userId, "userid");
 
-  // -------------------- User API Logic --------------------
-  // Get userId from localStorage and sessionStorage
-  const localStorageUserId = localStorage.getItem("userId");
-  const sessionStorageUserId = sessionStorage.getItem("userId");
-
-  // Function to extract the last part of the MIME type (e.g., "mp4" from "video/mp4")
-  const getMimeType = (mimeType) => {
-   return "video"
-  };
-
-  // API call if the user already exists
-  const callExistUserAPI = async (userId, mimeType) => {
-    try {
-      const cleanedMimeType = getMimeType(mimeType);
-      const response = await fetch("https://filescene.onrender.com/api/test2/existUser", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, mimeType: cleanedMimeType }),
-      });
-      if (!response.ok) throw new Error("Failed to call existUser API");
-      console.log("existUser API called successfully");
-    } catch (error) {
-      console.error("Error calling existUser API:", error);
-    }
-  };
-
-  // API call for a new user
-  const callNewUserAPI = async (userId, mimeType) => {
-    try {
-      const cleanedMimeType = getMimeType(mimeType);
-      const response = await fetch("https://filescene.onrender.com/api/test1/newUser", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, mimeType: cleanedMimeType }),
-      });
-      if (!response.ok) throw new Error("Failed to call newUser API");
-      console.log("newUser API called successfully");
-    } catch (error) {
-      console.error("Error calling newUser API:", error);
-    }
-  };
-
+  // -------------------- User Identification API Logic --------------------
   // Use a ref to ensure the API call happens only once.
   const apiCalledRef = useRef(false);
-  useEffect(() => {
-    if (apiCalledRef.current) return;
-    const delay = 1000; // 1-second delay
-    const timer = setTimeout(() => {
-      const isDataReady =
-        ip &&
-        location &&
-        userId &&
-        region &&
-        os &&
-        device &&
-        browser &&
-        !ip.includes("Detecting") &&
-        !location.includes("Detecting") &&
-        !userId.includes("Detecting") &&
-        !region.includes("Detecting") &&
-        !os.includes("Detecting") &&
-        !device.includes("Detecting") &&
-        !browser.includes("Detecting");
 
-      if (localStorageUserId && sessionStorageUserId && localStorageUserId === sessionStorageUserId) {
-        callExistUserAPI(localStorageUserId, mimeType);
-        apiCalledRef.current = true;
-      } else if (!localStorageUserId && !sessionStorageUserId) {
-        if ( userId) {
-          callNewUserAPI(userId, mimeType);
-          apiCalledRef.current = true;
-        }
+  // Identification API call: fires once after 3 seconds if userId is valid.
+  const sendIdentificationRequest = useCallback(async () => {
+    if (!userId || !window.location.pathname) return;
+
+    const documentId = window.location.pathname.split("/").pop();
+    const requestData = { userId, documentId, mimeType: "video" };
+
+    try {
+      const response = await fetch("https://filescene.onrender.com/api/user/identify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestData),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to identify user");
       }
-    }, delay);
-    return () => clearTimeout(timer);
-  }, [localStorageUserId, sessionStorageUserId, userId, ip, location, region, os, device, browser, mimeType]);
+      const result = await response.json();
+      console.log("User identification successful:", result);
+    } catch (error) {
+      console.error("Error sending identification request:", error);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    if (userId && userId.length > 15 && !apiCalledRef.current) {
+      const timer = setTimeout(() => {
+        sendIdentificationRequest();
+        apiCalledRef.current = true;
+      }, 3000); // 3-second delay
+
+      return () => clearTimeout(timer);
+    }
+  }, [userId, sendIdentificationRequest]);
 
   // -------------------- Video Analytics Code --------------------
   const playerRef = useRef(null);
