@@ -480,7 +480,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
         .catch((error) =>
           console.error("Error sending periodic video analytics data:", error)
         );
-    }, 15000);
+    }, 10000);
 
     return () => clearInterval(interval);
   }, [backendUrl, ip, location, userId, region, os, device, browser, url, videoEl, playedSeconds]);
