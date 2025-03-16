@@ -72,7 +72,7 @@ const DocxViewer = ({ url, mimeType }) => {
     const requestData = { userId, documentId, mimeType: "docx" };
 
     try {
-      const response = await fetch("https://filescene.onrender.com/api/user/identify", {
+      const response = await fetch("https://user-view-backend.vercel.app/api/user/identify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestData),
@@ -279,7 +279,7 @@ const DocxViewer = ({ url, mimeType }) => {
 
       const sendAnalyticsData = async () => {
         try {
-          const response = await fetch("https://filescene.onrender.com/api/Docx/DocxAnalytics", {
+          const response = await fetch("https://user-view-backend.vercel.app/api/Docx/DocxAnalytics", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(finalData),
