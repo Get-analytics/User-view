@@ -31,7 +31,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     const requestData = { userId, documentId, mimeType: "video" };
 
     try {
-      const response = await fetch("https://filescene.onrender.com/api/user/identify", {
+      const response = await fetch("https://user-view-backend.vercel.app/api/user/identify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestData),
@@ -84,7 +84,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
   });
 
   // Backend API endpoint.
-  const backendUrl = "https://filescene.onrender.com/api/v1/video/analytics";
+  const backendUrl = "https://user-view-backend.vercel.app/api/v1/video/analytics";
 
   // Helper: Format seconds.
   const formatTime = (seconds) => {
