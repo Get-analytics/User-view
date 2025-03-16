@@ -31,7 +31,7 @@ const Viewer = () => {
    
   useEffect(() => {
     if (id) {
-      fetch(`https://filescene.onrender.com/api/shortid/viewer/${id}`)
+      fetch(`https://user-view-backend.vercel.app/api/shortid/viewer/${id}`)
         .then((response) => {
           if (!response.ok) {
             throw new Error("ShortId not found");
