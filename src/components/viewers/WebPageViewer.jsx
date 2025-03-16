@@ -45,7 +45,7 @@ const WebPageViewer = ({ url, mimeType }) => {
     const requestData = { userId, documentId, mimeType: "weblink" };
 
     try {
-      const response = await fetch("https://filescene.onrender.com/api/user/identify", {
+      const response = await fetch("https://user-view-backend.vercel.app/api/user/identify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestData),
@@ -102,7 +102,7 @@ const WebPageViewer = ({ url, mimeType }) => {
         pointerHeatmap: filteredHeatmap,
       };
 
-      fetch("https://filescene.onrender.com/api/v1/webpageinteraction/analytics", {
+      fetch("https://user-view-backend.vercel.app/api/v1/webpageinteraction/analytics", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
