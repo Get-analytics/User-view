@@ -483,7 +483,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     }, 10000);
 
     return () => clearInterval(interval);
-  }, []);
+}, [ ip, location, userId, region, os, device, browser, url]);
 
   return (
     <div
