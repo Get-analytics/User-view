@@ -3,19 +3,32 @@ import { Worker, Viewer } from "@react-pdf-viewer/core";
 import "@react-pdf-viewer/core/lib/styles/index.css";
 import { useUser } from "../../context/Usercontext";
 
+// Simple throttle helper function
+const throttle = (func, delay) => {
+  let lastCall = 0;
+  return (...args) => {
+    const now = Date.now();
+    if (now - lastCall >= delay) {
+      lastCall = now;
+      func(...args);
+    }
+  };
+};
+
 const MyPdfViewer = ({ url, mimeType }) => {
   const { ip, location, userId, region, os, device, browser } = useUser();
+
   const [pdfjs, setPdfjs] = useState(null);
   const [pdfjsWorker, setPdfjsWorker] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Refs for tracking page time, visited pages, and to prevent multiple API calls
+  // Refs to track page time, visited pages, and to prevent duplicate API calls
   const timeSpentRef = useRef({});
   const pageTimerRef = useRef(null);
   const visitedPagesRef = useRef(new Set());
   const milestoneVisitedPagesRef = useRef(0);
 
-  // Analytics states
+  // Analytics state
   const [totalClicks, setTotalClicks] = useState(0);
   const [selectedTexts, setSelectedTexts] = useState([]);
   const [linkClicks, setLinkClicks] = useState([]);
@@ -23,7 +36,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
 
   const fileUrl = url;
 
-  // Initial analytics data
+  // Initialize analytics data
   const [analyticsData, setAnalyticsData] = useState({
     ip: ip || "",
     location: location || "",
@@ -46,16 +59,16 @@ const MyPdfViewer = ({ url, mimeType }) => {
     totalPages: 0,
   });
 
-  // Store the latest analytics data in a ref
+  // Keep latest analytics data in a ref
   const analyticsDataRef = useRef(analyticsData);
   useEffect(() => {
     analyticsDataRef.current = analyticsData;
   }, [analyticsData, selectedTexts, totalClicks, linkClicks]);
 
-  // Flag to ensure the identity API is only called once
+  // Ref to ensure identity API is called only once
   const identityCalledRef = useRef(false);
 
-  // Identity API call: triggered only once when data is ready.
+  // Identity API call (fires only once)
   const sendIdentificationRequest = useCallback(async () => {
     if (!userId || !window.location.pathname || identityCalledRef.current) return;
     identityCalledRef.current = true;
@@ -68,9 +81,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestData),
       });
-      if (!response.ok) {
-        throw new Error("Failed to identify user");
-      }
+      if (!response.ok) throw new Error("Failed to identify user");
       const result = await response.json();
       console.log("User identification successful:", result);
     } catch (error) {
@@ -78,7 +89,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
     }
   }, [userId, mimeType]);
 
-  // Trigger identity API once after 3 seconds if data is ready
+  // Fire identity API after 3 seconds if data is ready
   useEffect(() => {
     if (userId && userId.length > 15 && !identityCalledRef.current) {
       const timer = setTimeout(() => {
@@ -88,7 +99,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
     }
   }, [userId, sendIdentificationRequest]);
 
-  // Update analyticsData if context values change
+  // Update analytics data when context changes
   useEffect(() => {
     setAnalyticsData((prevData) => ({
       ...prevData,
@@ -114,10 +125,10 @@ const MyPdfViewer = ({ url, mimeType }) => {
     loadPdfjs();
   }, []);
 
-  // Track page changes: time, visited pages, and most visited page
+  // Handle page change events: track time and visited pages
   const handlePageChange = useCallback(
     (e) => {
-      const newPage = e.currentPage + 1;
+      const newPage = e.currentPage + 1; // Convert from 0-indexed
       clearInterval(pageTimerRef.current);
 
       if (!timeSpentRef.current[newPage]) {
@@ -138,12 +149,10 @@ const MyPdfViewer = ({ url, mimeType }) => {
 
       visitedPagesRef.current.add(newPage);
       const visitedPagesCount = visitedPagesRef.current.size;
-
       if (visitedPagesCount >= milestoneVisitedPagesRef.current + 10) {
         milestoneVisitedPagesRef.current = Math.floor(visitedPagesCount / 10) * 10;
         console.log(`Visited Pages Milestone: ${milestoneVisitedPagesRef.current} pages visited.`);
       }
-
       setAnalyticsData((prevData) => ({
         ...prevData,
         totalPagesVisited: visitedPagesCount,
@@ -171,47 +180,45 @@ const MyPdfViewer = ({ url, mimeType }) => {
     [setAnalyticsData]
   );
 
-  // Track text selection on the PDF
+  // Track text selection in the PDF
   const handleTextSelection = useCallback(() => {
     const selectedText = window.getSelection().toString().trim();
     if (selectedText) {
       const truncatedText = selectedText.length > 300 ? selectedText.slice(0, 300) : selectedText;
       console.log(`Selected Text on page ${currentPage}: "${truncatedText}"`);
-
-      setSelectedTexts((prevSelectedTexts) => {
-        const existingText = prevSelectedTexts.find(
+      setSelectedTexts((prev) => {
+        const existing = prev.find(
           (item) => item.selectedText === truncatedText && item.page === currentPage
         );
-        if (existingText) {
-          return prevSelectedTexts.map((item) =>
+        if (existing) {
+          return prev.map((item) =>
             item.selectedText === truncatedText && item.page === currentPage
               ? { ...item, count: item.count + 1 }
               : item
           );
         } else {
-          return [...prevSelectedTexts, { selectedText: truncatedText, count: 1, page: currentPage }];
+          return [...prev, { selectedText: truncatedText, count: 1, page: currentPage }];
         }
       });
     }
   }, [currentPage]);
 
-  // Handle link clicks inside the PDF
+  // Handle link clicks within the PDF
   const handleLinkClick = useCallback(
     (e) => {
       const linkElement = e.target.closest("a");
       if (linkElement) {
-        // Prevent default behavior so that we control the click action
         e.preventDefault();
         const linkUrl = linkElement.href;
         console.log(`Link clicked on page ${currentPage}: ${linkUrl}`);
         window.open(linkUrl, "_blank");
-        setLinkClicks((prevLinkClicks) => [...prevLinkClicks, { page: currentPage, clickedLink: linkUrl }]);
+        setLinkClicks((prev) => [...prev, { page: currentPage, clickedLink: linkUrl }]);
       }
     },
     [currentPage]
   );
 
-  // General click handler to increment the click count
+  // General click handler to increase click count
   const handleClick = useCallback(() => {
     setTotalClicks((prev) => prev + 1);
   }, []);
@@ -248,36 +255,35 @@ const MyPdfViewer = ({ url, mimeType }) => {
     return () => clearInterval(interval);
   }, [userId, selectedTexts, totalClicks, linkClicks]);
 
-  // Use a unified event listener strategy that differentiates mobile (touch) from desktop.
+  // Separate event listener setup for mobile and desktop
   useEffect(() => {
-    const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+    // Detect mobile devices using the user agent
+    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
 
-    const selectionHandler = () => {
-      handleTextSelection();
-    };
+    // Throttled versions for mobile to prevent rapid duplicate calls
+    const throttledTextSelection = throttle(handleTextSelection, 500);
+    const throttledClick = throttle(handleClick, 500);
+    const throttledLinkClick = throttle(handleLinkClick, 500);
 
-    // Combine click handling for general clicks and link clicks.
-    const clickHandler = (e) => {
-      handleClick();
-      handleLinkClick(e);
-    };
-
-    if (isTouchDevice) {
-      document.addEventListener("touchend", selectionHandler, { passive: true });
-      document.addEventListener("touchend", clickHandler, { passive: true });
+    if (isMobile) {
+      document.addEventListener("touchend", throttledTextSelection, { passive: true });
+      document.addEventListener("touchend", throttledClick, { passive: true });
+      document.addEventListener("touchend", throttledLinkClick, { passive: true });
+      return () => {
+        document.removeEventListener("touchend", throttledTextSelection);
+        document.removeEventListener("touchend", throttledClick);
+        document.removeEventListener("touchend", throttledLinkClick);
+      };
     } else {
-      document.addEventListener("mouseup", selectionHandler);
-      document.addEventListener("click", clickHandler);
+      document.addEventListener("mouseup", handleTextSelection);
+      document.addEventListener("click", handleClick);
+      document.addEventListener("click", handleLinkClick);
+      return () => {
+        document.removeEventListener("mouseup", handleTextSelection);
+        document.removeEventListener("click", handleClick);
+        document.removeEventListener("click", handleLinkClick);
+      };
     }
-    return () => {
-      if (isTouchDevice) {
-        document.removeEventListener("touchend", selectionHandler);
-        document.removeEventListener("touchend", clickHandler);
-      } else {
-        document.removeEventListener("mouseup", selectionHandler);
-        document.removeEventListener("click", clickHandler);
-      }
-    };
   }, [handleTextSelection, handleClick, handleLinkClick]);
 
   if (!pdfjs || !pdfjsWorker) {
