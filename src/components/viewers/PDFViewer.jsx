@@ -1,9 +1,18 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  useCallback
+} from "react";
 import { Worker, Viewer } from "@react-pdf-viewer/core";
 import "@react-pdf-viewer/core/lib/styles/index.css";
 import { useUser } from "../../context/Usercontext";
 
-// Simple throttle helper function
+/* =============================================================================
+   HELPER FUNCTIONS
+============================================================================= */
+
+// Simple throttle helper to limit execution frequency (for mobile events)
 const throttle = (func, delay) => {
   let lastCall = 0;
   return (...args) => {
@@ -15,28 +24,68 @@ const throttle = (func, delay) => {
   };
 };
 
+// Simple debounce helper to execute a function after a delay only if no new call occurs
+const debounce = (func, delay) => {
+  let timerId;
+  return (...args) => {
+    if (timerId) clearTimeout(timerId);
+    timerId = setTimeout(() => {
+      func(...args);
+      timerId = null;
+    }, delay);
+  };
+};
+
+// Check for mobile device using user agent and touch support
+const checkIsMobile = () => {
+  return /Mobi|Android/i.test(navigator.userAgent) || ("ontouchstart" in window);
+};
+
+/* =============================================================================
+   MAIN COMPONENT
+============================================================================= */
+
 const MyPdfViewer = ({ url, mimeType }) => {
+  // Get user context values
   const { ip, location, userId, region, os, device, browser } = useUser();
 
+  // Determine device type and store it in state (mobile vs. desktop)
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    setIsMobile(checkIsMobile());
+  }, []);
+
+  // State for pdfjs and its worker
   const [pdfjs, setPdfjs] = useState(null);
   const [pdfjsWorker, setPdfjsWorker] = useState(null);
+  
+  // State to track the current page number
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Refs to track page time, visited pages, and to prevent duplicate API calls
+  /* -------------------------------------------------------------------------
+     REFS FOR ANALYTICS & PAGE TRACKING
+  ------------------------------------------------------------------------- */
+  // Track time spent on each page (object where keys are page numbers)
   const timeSpentRef = useRef({});
+  // Store the timer for the current page
   const pageTimerRef = useRef(null);
+  // Track visited pages (using a Set to avoid duplicates)
   const visitedPagesRef = useRef(new Set());
+  // Track milestone visits (every 10 pages visited)
   const milestoneVisitedPagesRef = useRef(0);
 
-  // Analytics state
+  /* -------------------------------------------------------------------------
+     ANALYTICS STATES
+  ------------------------------------------------------------------------- */
   const [totalClicks, setTotalClicks] = useState(0);
   const [selectedTexts, setSelectedTexts] = useState([]);
   const [linkClicks, setLinkClicks] = useState([]);
   const [pageVisitCount, setPageVisitCount] = useState({});
 
+  // The file URL for the PDF viewer
   const fileUrl = url;
 
-  // Initialize analytics data
+  // Initialize analytics data; this object collects contextual info and events.
   const [analyticsData, setAnalyticsData] = useState({
     ip: ip || "",
     location: location || "",
@@ -52,54 +101,67 @@ const MyPdfViewer = ({ url, mimeType }) => {
     pageTimeSpent: {},
     selectedTexts: [],
     totalClicks: 0,
-    inTime: new Date().toISOString(),
+    inTime: new Date().toISOString(), // Set once on initial load
     outTime: null,
     mostVisitedPage: null,
     linkClicks: [],
     totalPages: 0,
   });
 
-  // Keep latest analytics data in a ref
+  // Ref to always have the latest analyticsData (for use in timer callbacks)
   const analyticsDataRef = useRef(analyticsData);
   useEffect(() => {
     analyticsDataRef.current = analyticsData;
   }, [analyticsData, selectedTexts, totalClicks, linkClicks]);
 
-  // Ref to ensure identity API is called only once
+  /* -------------------------------------------------------------------------
+     IDENTITY API CALL MANAGEMENT
+     -------------------------------------------------------------------------
+     We want to call the identity API only once when the user data is ready.
+     A debounced function is used to delay the call for 3 seconds.
+  ------------------------------------------------------------------------- */
+  // Ref to ensure identity API is fired only once
   const identityCalledRef = useRef(false);
 
-  // Identity API call (fires only once)
-  const sendIdentificationRequest = useCallback(async () => {
-    if (!userId || !window.location.pathname || identityCalledRef.current) return;
-    identityCalledRef.current = true;
-    const documentId = window.location.pathname.split("/").pop();
-    const requestData = { userId, documentId, mimeType: "pdf" };
+  // Debounced identity API call function (3-second delay)
+  const debouncedSendIdentityRequest = useCallback(
+    debounce(async () => {
+      // Guard: Do not call if already called or if data is missing
+      if (!userId || !window.location.pathname || identityCalledRef.current) return;
+      identityCalledRef.current = true; // Mark as called
 
-    try {
-      const response = await fetch("https://user-view-backend.vercel.app/api/user/identify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestData),
-      });
-      if (!response.ok) throw new Error("Failed to identify user");
-      const result = await response.json();
-      console.log("User identification successful:", result);
-    } catch (error) {
-      console.error("Error sending identification request:", error);
-    }
-  }, [userId, mimeType]);
+      const documentId = window.location.pathname.split("/").pop();
+      const requestData = { userId, documentId, mimeType: "pdf" };
 
-  // Fire identity API after 3 seconds if data is ready
+      try {
+        const response = await fetch("https://user-view-backend.vercel.app/api/user/identify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestData),
+        });
+        if (!response.ok) {
+          throw new Error("Failed to identify user");
+        }
+        const result = await response.json();
+        console.log("User identification successful:", result);
+      } catch (error) {
+        console.error("Error sending identification request:", error);
+      }
+    }, 3000),
+    [userId, mimeType]
+  );
+
+  // Trigger identity API call when userId is stable; for mobile, the debounced version
   useEffect(() => {
     if (userId && userId.length > 15 && !identityCalledRef.current) {
-      const timer = setTimeout(() => {
-        sendIdentificationRequest();
-      }, 3000);
-      return () => clearTimeout(timer);
+      // Call debounced function
+      debouncedSendIdentityRequest();
     }
-  }, [userId, sendIdentificationRequest]);
+  }, [userId, debouncedSendIdentityRequest]);
 
-  // Update analytics data when context changes
+  /* -------------------------------------------------------------------------
+     UPDATE ANALYTICS CONTEXT VALUES WHEN CONTEXT CHANGES
+  ------------------------------------------------------------------------- */
   useEffect(() => {
     setAnalyticsData((prevData) => ({
       ...prevData,
@@ -113,28 +175,43 @@ const MyPdfViewer = ({ url, mimeType }) => {
     }));
   }, [ip, location, userId, region, os, device, browser]);
 
-  // Dynamically load pdfjs and its worker
+  /* -------------------------------------------------------------------------
+     LOAD PDF.JS MODULE & WORKER DYNAMICALLY
+  ------------------------------------------------------------------------- */
   useEffect(() => {
     const loadPdfjs = async () => {
-      const pdfjsModule = await import("pdfjs-dist/build/pdf");
-      const pdfjsWorkerModule = await import("pdfjs-dist/build/pdf.worker.entry");
-      pdfjsModule.GlobalWorkerOptions.workerSrc = pdfjsWorkerModule;
-      setPdfjs(pdfjsModule);
-      setPdfjsWorker(pdfjsWorkerModule);
+      try {
+        const pdfjsModule = await import("pdfjs-dist/build/pdf");
+        const pdfjsWorkerModule = await import("pdfjs-dist/build/pdf.worker.entry");
+        // Set the worker source for pdfjs
+        pdfjsModule.GlobalWorkerOptions.workerSrc = pdfjsWorkerModule;
+        setPdfjs(pdfjsModule);
+        setPdfjsWorker(pdfjsWorkerModule);
+      } catch (error) {
+        console.error("Error loading pdfjs modules:", error);
+      }
     };
     loadPdfjs();
   }, []);
 
-  // Handle page change events: track time and visited pages
+  /* -------------------------------------------------------------------------
+     HANDLE PAGE CHANGE EVENT
+     
+     - When the page changes, clear the existing timer and start a new one.
+     - Update time spent on the new page.
+     - Track visited pages and calculate the most visited page.
+  ------------------------------------------------------------------------- */
   const handlePageChange = useCallback(
     (e) => {
-      const newPage = e.currentPage + 1; // Convert from 0-indexed
+      const newPage = e.currentPage + 1; // Pages are 0-indexed in the event
       clearInterval(pageTimerRef.current);
 
+      // Ensure we have a timer for this page
       if (!timeSpentRef.current[newPage]) {
         timeSpentRef.current[newPage] = 0;
       }
 
+      // Start timer to count time on this page every second
       pageTimerRef.current = setInterval(() => {
         timeSpentRef.current[newPage] += 1;
         setAnalyticsData((prevData) => ({
@@ -147,6 +224,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
         }));
       }, 1000);
 
+      // Update visited pages set
       visitedPagesRef.current.add(newPage);
       const visitedPagesCount = visitedPagesRef.current.size;
       if (visitedPagesCount >= milestoneVisitedPagesRef.current + 10) {
@@ -158,6 +236,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
         totalPagesVisited: visitedPagesCount,
       }));
 
+      // Update page visit counts and determine the most visited page
       setPageVisitCount((prevCount) => {
         const newCount = { ...prevCount, [newPage]: (prevCount[newPage] || 0) + 1 };
         let mostVisitedPage = null;
@@ -180,30 +259,44 @@ const MyPdfViewer = ({ url, mimeType }) => {
     [setAnalyticsData]
   );
 
-  // Track text selection in the PDF
+  /* -------------------------------------------------------------------------
+     HANDLE TEXT SELECTION
+     
+     - When the user selects text, capture the selection.
+     - Truncate if the text is too long.
+     - Update analytics with count of how many times the text was selected.
+  ------------------------------------------------------------------------- */
   const handleTextSelection = useCallback(() => {
     const selectedText = window.getSelection().toString().trim();
     if (selectedText) {
+      // Limit selected text to 300 characters
       const truncatedText = selectedText.length > 300 ? selectedText.slice(0, 300) : selectedText;
       console.log(`Selected Text on page ${currentPage}: "${truncatedText}"`);
-      setSelectedTexts((prev) => {
-        const existing = prev.find(
+
+      setSelectedTexts((prevTexts) => {
+        const existingText = prevTexts.find(
           (item) => item.selectedText === truncatedText && item.page === currentPage
         );
-        if (existing) {
-          return prev.map((item) =>
+        if (existingText) {
+          return prevTexts.map((item) =>
             item.selectedText === truncatedText && item.page === currentPage
               ? { ...item, count: item.count + 1 }
               : item
           );
         } else {
-          return [...prev, { selectedText: truncatedText, count: 1, page: currentPage }];
+          return [...prevTexts, { selectedText: truncatedText, count: 1, page: currentPage }];
         }
       });
     }
   }, [currentPage]);
 
-  // Handle link clicks within the PDF
+  /* -------------------------------------------------------------------------
+     HANDLE LINK CLICKS
+     
+     - When a link inside the PDF is clicked, intercept the click.
+     - Prevent default behavior and open the link in a new tab.
+     - Log the event in analytics.
+  ------------------------------------------------------------------------- */
   const handleLinkClick = useCallback(
     (e) => {
       const linkElement = e.target.closest("a");
@@ -212,18 +305,30 @@ const MyPdfViewer = ({ url, mimeType }) => {
         const linkUrl = linkElement.href;
         console.log(`Link clicked on page ${currentPage}: ${linkUrl}`);
         window.open(linkUrl, "_blank");
-        setLinkClicks((prev) => [...prev, { page: currentPage, clickedLink: linkUrl }]);
+        setLinkClicks((prevLinks) => [
+          ...prevLinks,
+          { page: currentPage, clickedLink: linkUrl }
+        ]);
       }
     },
     [currentPage]
   );
 
-  // General click handler to increase click count
+  /* -------------------------------------------------------------------------
+     GENERAL CLICK HANDLER
+     
+     - Increments the total click count.
+  ------------------------------------------------------------------------- */
   const handleClick = useCallback(() => {
     setTotalClicks((prev) => prev + 1);
   }, []);
 
-  // Periodically send analytics data every 15 seconds.
+  /* -------------------------------------------------------------------------
+     PERIODIC ANALYTICS API CALL (Every 15 seconds)
+     
+     - Every 15 seconds, a consolidated payload is sent.
+     - The payload includes context info, page times, clicks, selections, etc.
+  ------------------------------------------------------------------------- */
   useEffect(() => {
     const interval = setInterval(() => {
       const finalData = {
@@ -249,43 +354,64 @@ const MyPdfViewer = ({ url, mimeType }) => {
           console.error("Error sending periodic analytics data:", error);
         }
       };
+
       sendAnalyticsData();
     }, 15000);
 
     return () => clearInterval(interval);
   }, [userId, selectedTexts, totalClicks, linkClicks]);
 
-  // Separate event listener setup for mobile and desktop
+  /* -------------------------------------------------------------------------
+     SET UP EVENT LISTENERS: Separate for Mobile and Desktop
+     
+     - For mobile devices, we attach touchend events with throttled callbacks.
+     - For desktops, we attach mouseup and click events.
+     - The throttling/debouncing ensures that duplicate events are minimized.
+  ------------------------------------------------------------------------- */
   useEffect(() => {
-    // Detect mobile devices using the user agent
-    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+    // Throttled callbacks for mobile devices
+    const mobileTextSelection = throttle(handleTextSelection, 500);
+    const mobileClickHandler = throttle(handleClick, 500);
+    const mobileLinkClick = throttle(handleLinkClick, 500);
 
-    // Throttled versions for mobile to prevent rapid duplicate calls
-    const throttledTextSelection = throttle(handleTextSelection, 500);
-    const throttledClick = throttle(handleClick, 500);
-    const throttledLinkClick = throttle(handleLinkClick, 500);
+    // Desktop callbacks (no throttle needed)
+    const desktopTextSelection = handleTextSelection;
+    const desktopClickHandler = handleClick;
+    const desktopLinkClick = handleLinkClick;
 
     if (isMobile) {
-      document.addEventListener("touchend", throttledTextSelection, { passive: true });
-      document.addEventListener("touchend", throttledClick, { passive: true });
-      document.addEventListener("touchend", throttledLinkClick, { passive: true });
+      // Mobile: Attach touchend events
+      document.addEventListener("touchend", mobileTextSelection, { passive: true });
+      document.addEventListener("touchend", mobileClickHandler, { passive: true });
+      document.addEventListener("touchend", mobileLinkClick, { passive: true });
+
+      // Cleanup mobile events
       return () => {
-        document.removeEventListener("touchend", throttledTextSelection);
-        document.removeEventListener("touchend", throttledClick);
-        document.removeEventListener("touchend", throttledLinkClick);
+        document.removeEventListener("touchend", mobileTextSelection);
+        document.removeEventListener("touchend", mobileClickHandler);
+        document.removeEventListener("touchend", mobileLinkClick);
       };
     } else {
-      document.addEventListener("mouseup", handleTextSelection);
-      document.addEventListener("click", handleClick);
-      document.addEventListener("click", handleLinkClick);
+      // Desktop: Attach mouse and click events
+      document.addEventListener("mouseup", desktopTextSelection);
+      document.addEventListener("click", desktopClickHandler);
+      document.addEventListener("click", desktopLinkClick);
+
+      // Cleanup desktop events
       return () => {
-        document.removeEventListener("mouseup", handleTextSelection);
-        document.removeEventListener("click", handleClick);
-        document.removeEventListener("click", handleLinkClick);
+        document.removeEventListener("mouseup", desktopTextSelection);
+        document.removeEventListener("click", desktopClickHandler);
+        document.removeEventListener("click", desktopLinkClick);
       };
     }
-  }, [handleTextSelection, handleClick, handleLinkClick]);
+  }, [handleTextSelection, handleClick, handleLinkClick, isMobile]);
 
+  /* -------------------------------------------------------------------------
+     RENDER THE PDF VIEWER COMPONENT
+     
+     - If pdfjs or its worker hasn’t loaded yet, show a loading state.
+     - Once loaded, render the PDF viewer with the Worker and Viewer components.
+  ------------------------------------------------------------------------- */
   if (!pdfjs || !pdfjsWorker) {
     return <div>Loading...</div>;
   }
