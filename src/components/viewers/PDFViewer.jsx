@@ -4,13 +4,7 @@ import "@react-pdf-viewer/core/lib/styles/index.css";
 import { useUser } from "../../context/Usercontext";
 
 const MyPdfViewer = ({ url, mimeType }) => {
-  console.log(mimeType, "mimetype");
-
   const { ip, location, userId, region, os, device, browser } = useUser();
-  console.log(ip, location, userId, region, os, device, browser, "dataaaaaaa");
-  console.log(window.location.pathname);
-  console.log(userId, "userid");
-
   const [pdfjs, setPdfjs] = useState(null);
   const [pdfjsWorker, setPdfjsWorker] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -20,9 +14,8 @@ const MyPdfViewer = ({ url, mimeType }) => {
   const pageTimerRef = useRef(null);
   const visitedPagesRef = useRef(new Set());
   const milestoneVisitedPagesRef = useRef(0);
-  const apiCalledRef = useRef(false);
 
-  // State variables for tracking analytics events
+  // Analytics states
   const [totalClicks, setTotalClicks] = useState(0);
   const [selectedTexts, setSelectedTexts] = useState([]);
   const [linkClicks, setLinkClicks] = useState([]);
@@ -30,8 +23,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
 
   const fileUrl = url;
 
-  // Set up initial analytics data.
-  // inTime is set once at initial load and remains constant.
+  // Initial analytics data
   const [analyticsData, setAnalyticsData] = useState({
     ip: ip || "",
     location: location || "",
@@ -47,27 +39,26 @@ const MyPdfViewer = ({ url, mimeType }) => {
     pageTimeSpent: {},
     selectedTexts: [],
     totalClicks: 0,
-    inTime: new Date().toISOString(), // First load timestamp (never updated)
+    inTime: new Date().toISOString(),
     outTime: null,
     mostVisitedPage: null,
     linkClicks: [],
     totalPages: 0,
   });
 
-  // Create a ref to store the latest analytics data.
+  // Store the latest analytics data in a ref
   const analyticsDataRef = useRef(analyticsData);
   useEffect(() => {
     analyticsDataRef.current = analyticsData;
   }, [analyticsData, selectedTexts, totalClicks, linkClicks]);
 
-  // Get userId from localStorage and sessionStorage
-  const localStorageUserId = localStorage.getItem("userId");
-  const sessionStorageUserId = sessionStorage.getItem("userId");
+  // Flag to ensure the identity API is only called once
+  const identityCalledRef = useRef(false);
 
-  // Identification API call: fires once after 3 seconds if userId is valid.
+  // Identity API call: triggered only once when data is ready.
   const sendIdentificationRequest = useCallback(async () => {
-    if (!userId || !window.location.pathname) return;
-
+    if (!userId || !window.location.pathname || identityCalledRef.current) return;
+    identityCalledRef.current = true;
     const documentId = window.location.pathname.split("/").pop();
     const requestData = { userId, documentId, mimeType: "pdf" };
 
@@ -85,52 +76,17 @@ const MyPdfViewer = ({ url, mimeType }) => {
     } catch (error) {
       console.error("Error sending identification request:", error);
     }
-  }, [userId]);
+  }, [userId, mimeType]);
 
+  // Trigger identity API once after 3 seconds if data is ready
   useEffect(() => {
-    if (userId && userId.length > 15 && !apiCalledRef.current) {
+    if (userId && userId.length > 15 && !identityCalledRef.current) {
       const timer = setTimeout(() => {
         sendIdentificationRequest();
-        apiCalledRef.current = true;
-      }, 3000); // 3-second delay
-
+      }, 3000);
       return () => clearTimeout(timer);
     }
   }, [userId, sendIdentificationRequest]);
-
-  // Handle userId API calls based on localStorage and sessionStorage
-  useEffect(() => {
-    if (apiCalledRef.current) return;
-    const delay = 1000; // 1-second delay
-
-    const timer = setTimeout(() => {
-      const isDataReady =
-        ip &&
-        location &&
-        userId &&
-        region &&
-        os &&
-        device &&
-        browser &&
-        !ip.includes("Detecting") &&
-        !location.includes("Detecting") &&
-        !userId.includes("Detecting") &&
-        !region.includes("Detecting") &&
-        !os.includes("Detecting") &&
-        !device.includes("Detecting") &&
-        !browser.includes("Detecting");
-
-      if (localStorageUserId && sessionStorageUserId && localStorageUserId === sessionStorageUserId) {
-        apiCalledRef.current = true;
-      } else if (!localStorageUserId && !sessionStorageUserId) {
-        if (isDataReady && userId) {
-          apiCalledRef.current = true;
-        }
-      }
-    }, delay);
-
-    return () => clearTimeout(timer);
-  }, [localStorageUserId, sessionStorageUserId, userId, ip, location, region, os, device, browser]);
 
   // Update analyticsData if context values change
   useEffect(() => {
@@ -158,10 +114,10 @@ const MyPdfViewer = ({ url, mimeType }) => {
     loadPdfjs();
   }, []);
 
-  // Handle page changes: track time spent, visited pages, and calculate the most visited page
+  // Track page changes: time, visited pages, and most visited page
   const handlePageChange = useCallback(
     (e) => {
-      const newPage = e.currentPage + 1; // Pages are zero-indexed in the event
+      const newPage = e.currentPage + 1;
       clearInterval(pageTimerRef.current);
 
       if (!timeSpentRef.current[newPage]) {
@@ -239,19 +195,17 @@ const MyPdfViewer = ({ url, mimeType }) => {
     }
   }, [currentPage]);
 
-  // Intercept and track link clicks inside the PDF
+  // Handle link clicks inside the PDF
   const handleLinkClick = useCallback(
     (e) => {
       const linkElement = e.target.closest("a");
       if (linkElement) {
+        // Prevent default behavior so that we control the click action
         e.preventDefault();
         const linkUrl = linkElement.href;
         console.log(`Link clicked on page ${currentPage}: ${linkUrl}`);
         window.open(linkUrl, "_blank");
-        setLinkClicks((prevLinkClicks) => [
-          ...prevLinkClicks,
-          { page: currentPage, clickedLink: linkUrl },
-        ]);
+        setLinkClicks((prevLinkClicks) => [...prevLinkClicks, { page: currentPage, clickedLink: linkUrl }]);
       }
     },
     [currentPage]
@@ -263,13 +217,10 @@ const MyPdfViewer = ({ url, mimeType }) => {
   }, []);
 
   // Periodically send analytics data every 15 seconds.
-  // Here, we set outTime to the current time at each payload,
-  // while inTime remains as the initial load timestamp.
   useEffect(() => {
     const interval = setInterval(() => {
       const finalData = {
         ...analyticsDataRef.current,
-        // Set outTime to the current time for every payload
         outTime: new Date().toISOString(),
         userId: userId,
         selectedTexts: selectedTexts,
@@ -297,18 +248,35 @@ const MyPdfViewer = ({ url, mimeType }) => {
     return () => clearInterval(interval);
   }, [userId, selectedTexts, totalClicks, linkClicks]);
 
-  // Set up event listeners for text selection and general clicks
+  // Use a unified event listener strategy that differentiates mobile (touch) from desktop.
   useEffect(() => {
-    document.addEventListener("mouseup", handleTextSelection);
-    document.addEventListener("touchend", handleTextSelection);
-    document.addEventListener("click", handleClick);
-    document.addEventListener("click", handleLinkClick);
+    const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
 
+    const selectionHandler = () => {
+      handleTextSelection();
+    };
+
+    // Combine click handling for general clicks and link clicks.
+    const clickHandler = (e) => {
+      handleClick();
+      handleLinkClick(e);
+    };
+
+    if (isTouchDevice) {
+      document.addEventListener("touchend", selectionHandler, { passive: true });
+      document.addEventListener("touchend", clickHandler, { passive: true });
+    } else {
+      document.addEventListener("mouseup", selectionHandler);
+      document.addEventListener("click", clickHandler);
+    }
     return () => {
-      document.removeEventListener("mouseup", handleTextSelection);
-      document.removeEventListener("touchend", handleTextSelection);
-      document.removeEventListener("click", handleClick);
-      document.removeEventListener("click", handleLinkClick);
+      if (isTouchDevice) {
+        document.removeEventListener("touchend", selectionHandler);
+        document.removeEventListener("touchend", clickHandler);
+      } else {
+        document.removeEventListener("mouseup", selectionHandler);
+        document.removeEventListener("click", clickHandler);
+      }
     };
   }, [handleTextSelection, handleClick, handleLinkClick]);
 
