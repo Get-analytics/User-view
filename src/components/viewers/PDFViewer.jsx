@@ -103,6 +103,13 @@ import React, {
       linkClicks: [],
       totalPages: 0,
     });
+
+          useEffect(() => {
+              if (device && device !== "Detecting...") {
+                setIsMobile(device.toLowerCase().includes("mobile"));
+              }
+    }, [device]);
+
   
     // Ref to always have the latest analyticsData (for use in timer callbacks)
     const analyticsDataRef = useRef(analyticsData);
@@ -418,7 +425,7 @@ import React, {
         <Worker workerUrl={pdfjsWorker}>
           <Viewer
             fileUrl={fileUrl}
-            defaultScale={device?.toLowerCase() == "mobile" ? 0.5 : 1.8}
+            defaultScale={isMobile ? 0.5 : 1.8}
             renderMode="canvas"
             onPageChange={handlePageChange}
             plugins={[]}
