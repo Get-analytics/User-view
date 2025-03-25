@@ -50,30 +50,7 @@ import React, {
     const { ip, location, userId, region, os, device, browser } = useUser();
   
     // Determine device type and store it in state (mobile vs. desktop)
-    const [isMobile, setIsMobile] = useState(false);
- useEffect(() => {
-  const hostname = window.location.hostname;
-
-  // If we're not on a mobile hostname, override isMobile to false
-  if (!hostname.startsWith("m.")) {
-    setIsMobile(false);
-    return;
-  }
-
-  // Otherwise, check if the device is mobile and redirect if so
-  const mobileDetected = checkIsMobile();
-  setIsMobile(mobileDetected);
-
-  if (mobileDetected) {
-    const newHostname = hostname.replace(/^m\./, "www.");
-    const newUrl = window.location.href.replace(hostname, newHostname);
-    window.location.href = newUrl;
-  }
-}, []);
-
-
-      
-  
+    const [isMobile, setIsMobile] = useState(false); 
     // State for pdfjs and its worker
     const [pdfjs, setPdfjs] = useState(null);
     const [pdfjsWorker, setPdfjsWorker] = useState(null);
@@ -441,7 +418,7 @@ import React, {
         <Worker workerUrl={pdfjsWorker}>
           <Viewer
             fileUrl={fileUrl}
-            defaultScale={1.5}
+            defaultScale={0.5}
             renderMode="canvas"
             onPageChange={handlePageChange}
             plugins={[]}
