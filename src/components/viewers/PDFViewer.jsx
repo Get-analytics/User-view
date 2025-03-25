@@ -51,17 +51,18 @@ import React, {
   
     // Determine device type and store it in state (mobile vs. desktop)
     const [isMobile, setIsMobile] = useState(false);
-    useEffect(() => {
-        const mobileDetected = checkIsMobile();
-        setIsMobile(mobileDetected);
-      
-        // If a mobile device is detected, redirect to the desktop site
-        if (mobileDetected) {
-          const currentUrl = window.location.href;
-          const newUrl = currentUrl.replace("m.", "www."); // Adjust this based on how your site handles mobile vs. desktop
-          window.location.href = newUrl; 
-        }
-      }, []);
+   useEffect(() => {
+  const mobileDetected = checkIsMobile();
+  setIsMobile(mobileDetected);
+
+  // Only redirect if on a mobile hostname (i.e., starting with "m.")
+  if (mobileDetected && window.location.hostname.startsWith("m.")) {
+    const newHostname = window.location.hostname.replace(/^m\./, "www.");
+    const newUrl = window.location.href.replace(window.location.hostname, newHostname);
+    window.location.href = newUrl;
+  }
+}, []);
+
       
   
     // State for pdfjs and its worker
