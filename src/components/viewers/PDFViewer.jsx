@@ -51,17 +51,26 @@ import React, {
   
     // Determine device type and store it in state (mobile vs. desktop)
     const [isMobile, setIsMobile] = useState(false);
-   useEffect(() => {
+ useEffect(() => {
+  const hostname = window.location.hostname;
+
+  // If we're not on a mobile hostname, override isMobile to false
+  if (!hostname.startsWith("m.")) {
+    setIsMobile(false);
+    return;
+  }
+
+  // Otherwise, check if the device is mobile and redirect if so
   const mobileDetected = checkIsMobile();
   setIsMobile(mobileDetected);
 
-  // Only redirect if on a mobile hostname (i.e., starting with "m.")
-  if (mobileDetected && window.location.hostname.startsWith("m.")) {
-    const newHostname = window.location.hostname.replace(/^m\./, "www.");
-    const newUrl = window.location.href.replace(window.location.hostname, newHostname);
+  if (mobileDetected) {
+    const newHostname = hostname.replace(/^m\./, "www.");
+    const newUrl = window.location.href.replace(hostname, newHostname);
     window.location.href = newUrl;
   }
 }, []);
+
 
       
   
