@@ -41,6 +41,14 @@ const checkIsMobile = () => {
   return /Mobi|Android/i.test(navigator.userAgent) || ("ontouchstart" in window);
 };
 
+// Helper to check if entire selection is within a given container
+const isSelectionWithinContainer = (container) => {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return false;
+  const range = selection.getRangeAt(0);
+  return container.contains(range.startContainer) && container.contains(range.endContainer);
+};
+
 /* =============================================================================
    MAIN COMPONENT
 ============================================================================= */
@@ -54,6 +62,9 @@ const MyPdfViewer = ({ url, mimeType }) => {
   useEffect(() => {
     setIsMobile(checkIsMobile());
   }, []);
+
+  // Ref for the PDF viewer container; event listeners will attach here
+  const viewerContainerRef = useRef(null);
 
   // State for pdfjs and its worker
   const [pdfjs, setPdfjs] = useState(null);
@@ -116,7 +127,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
 
   /* -------------------------------------------------------------------------
      IDENTITY API CALL MANAGEMENT
-     -------------------------------------------------------------------------
+     
      We want to call the identity API only once when the user data is ready.
      A debounced function is used to delay the call for 3 seconds.
   ------------------------------------------------------------------------- */
@@ -151,10 +162,9 @@ const MyPdfViewer = ({ url, mimeType }) => {
     [userId, mimeType]
   );
 
-  // Trigger identity API call when userId is stable; for mobile, the debounced version
+  // Trigger identity API call when userId is stable
   useEffect(() => {
     if (userId && userId.length > 15 && !identityCalledRef.current) {
-      // Call debounced function
       debouncedSendIdentityRequest();
     }
   }, [userId, debouncedSendIdentityRequest]);
@@ -262,12 +272,16 @@ const MyPdfViewer = ({ url, mimeType }) => {
   /* -------------------------------------------------------------------------
      HANDLE TEXT SELECTION
      
-     - When the user selects text, capture the selection.
-     - Truncate if the text is too long.
-     - Update analytics with count of how many times the text was selected.
+     - Capture text selection only within the PDF viewer container.
+     - Verify that both the start and end of the selection lie within the container.
+     - Truncate if the text is too long and update analytics.
   ------------------------------------------------------------------------- */
   const handleTextSelection = useCallback(() => {
-    const selectedText = window.getSelection().toString().trim();
+    const container = viewerContainerRef.current;
+    if (!container || !isSelectionWithinContainer(container)) return;
+
+    const selection = window.getSelection();
+    const selectedText = selection.toString().trim();
     if (selectedText) {
       // Limit selected text to 300 characters
       const truncatedText = selectedText.length > 300 ? selectedText.slice(0, 300) : selectedText;
@@ -293,7 +307,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
   /* -------------------------------------------------------------------------
      HANDLE LINK CLICKS
      
-     - When a link inside the PDF is clicked, intercept the click.
+     - Intercept clicks on links inside the PDF.
      - Prevent default behavior and open the link in a new tab.
      - Log the event in analytics.
   ------------------------------------------------------------------------- */
@@ -364,9 +378,8 @@ const MyPdfViewer = ({ url, mimeType }) => {
   /* -------------------------------------------------------------------------
      SET UP EVENT LISTENERS: Separate for Mobile and Desktop
      
-     - For mobile devices, we attach touchend events with throttled callbacks.
-     - For desktops, we attach mouseup and click events.
-     - The throttling/debouncing ensures that duplicate events are minimized.
+     - For mobile devices, attach touchend events with throttled callbacks.
+     - For desktops, attach events only within the PDF viewer container.
   ------------------------------------------------------------------------- */
   useEffect(() => {
     // Throttled callbacks for mobile devices
@@ -374,34 +387,33 @@ const MyPdfViewer = ({ url, mimeType }) => {
     const mobileClickHandler = throttle(handleClick, 500);
     const mobileLinkClick = throttle(handleLinkClick, 500);
 
-    // Desktop callbacks (no throttle needed)
+    // Desktop callbacks (using the original functions)
     const desktopTextSelection = handleTextSelection;
     const desktopClickHandler = handleClick;
     const desktopLinkClick = handleLinkClick;
 
-    if (isMobile) {
-      // Mobile: Attach touchend events
-      document.addEventListener("touchend", mobileTextSelection, { passive: true });
-      document.addEventListener("touchend", mobileClickHandler, { passive: true });
-      document.addEventListener("touchend", mobileLinkClick, { passive: true });
+    const container = viewerContainerRef.current;
+    if (!container) return;
 
-      // Cleanup mobile events
+    if (isMobile) {
+      container.addEventListener("touchend", mobileTextSelection, { passive: true });
+      container.addEventListener("touchend", mobileClickHandler, { passive: true });
+      container.addEventListener("touchend", mobileLinkClick, { passive: true });
+
       return () => {
-        document.removeEventListener("touchend", mobileTextSelection);
-        document.removeEventListener("touchend", mobileClickHandler);
-        document.removeEventListener("touchend", mobileLinkClick);
+        container.removeEventListener("touchend", mobileTextSelection);
+        container.removeEventListener("touchend", mobileClickHandler);
+        container.removeEventListener("touchend", mobileLinkClick);
       };
     } else {
-      // Desktop: Attach mouse and click events
-      document.addEventListener("mouseup", desktopTextSelection);
-      document.addEventListener("click", desktopClickHandler);
-      document.addEventListener("click", desktopLinkClick);
+      container.addEventListener("mouseup", desktopTextSelection);
+      container.addEventListener("click", desktopClickHandler);
+      container.addEventListener("click", desktopLinkClick);
 
-      // Cleanup desktop events
       return () => {
-        document.removeEventListener("mouseup", desktopTextSelection);
-        document.removeEventListener("click", desktopClickHandler);
-        document.removeEventListener("click", desktopLinkClick);
+        container.removeEventListener("mouseup", desktopTextSelection);
+        container.removeEventListener("click", desktopClickHandler);
+        container.removeEventListener("click", desktopLinkClick);
       };
     }
   }, [handleTextSelection, handleClick, handleLinkClick, isMobile]);
@@ -410,14 +422,14 @@ const MyPdfViewer = ({ url, mimeType }) => {
      RENDER THE PDF VIEWER COMPONENT
      
      - If pdfjs or its worker hasn’t loaded yet, show a loading state.
-     - Once loaded, render the PDF viewer with the Worker and Viewer components.
+     - Wrap the PDF viewer in a container with the ref for event attachment.
   ------------------------------------------------------------------------- */
   if (!pdfjs || !pdfjsWorker) {
     return <div>Loading...</div>;
   }
 
   return (
-    <div style={{ height: "100vh", position: "relative" }}>
+    <div ref={viewerContainerRef} style={{ height: "100vh", position: "relative" }}>
       <h1 style={{ textAlign: "center", padding: "20px" }}>PDF Viewer</h1>
       <Worker workerUrl={pdfjsWorker}>
         <Viewer
