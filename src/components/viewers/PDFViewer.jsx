@@ -425,7 +425,7 @@ import React, {
         <Worker workerUrl={pdfjsWorker}>
           <Viewer
             fileUrl={fileUrl}
-            defaultScale={isMobile ? 0.5 : 1.8}
+            defaultScale={isMobile ? 0.6 : 1.7}
             renderMode="canvas"
             onPageChange={handlePageChange}
             plugins={[]}
