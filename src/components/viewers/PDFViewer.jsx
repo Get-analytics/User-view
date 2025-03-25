@@ -65,9 +65,13 @@ const MyPdfViewer = ({ url, mimeType }) => {
   /* -------------------------------------------------------------------------
      REFS FOR ANALYTICS & PAGE TRACKING
   ------------------------------------------------------------------------- */
+  // Track time spent on each page (object where keys are page numbers)
   const timeSpentRef = useRef({});
+  // Store the timer for the current page
   const pageTimerRef = useRef(null);
+  // Track visited pages (using a Set to avoid duplicates)
   const visitedPagesRef = useRef(new Set());
+  // Track milestone visits (every 10 pages visited)
   const milestoneVisitedPagesRef = useRef(0);
 
   /* -------------------------------------------------------------------------
@@ -97,7 +101,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
     pageTimeSpent: {},
     selectedTexts: [],
     totalClicks: 0,
-    inTime: new Date().toISOString(),
+    inTime: new Date().toISOString(), // Set once on initial load
     outTime: null,
     mostVisitedPage: null,
     linkClicks: [],
@@ -112,12 +116,19 @@ const MyPdfViewer = ({ url, mimeType }) => {
 
   /* -------------------------------------------------------------------------
      IDENTITY API CALL MANAGEMENT
+     -------------------------------------------------------------------------
+     We want to call the identity API only once when the user data is ready.
+     A debounced function is used to delay the call for 3 seconds.
   ------------------------------------------------------------------------- */
+  // Ref to ensure identity API is fired only once
   const identityCalledRef = useRef(false);
+
+  // Debounced identity API call function (3-second delay)
   const debouncedSendIdentityRequest = useCallback(
     debounce(async () => {
+      // Guard: Do not call if already called or if data is missing
       if (!userId || !window.location.pathname || identityCalledRef.current) return;
-      identityCalledRef.current = true;
+      identityCalledRef.current = true; // Mark as called
 
       const documentId = window.location.pathname.split("/").pop();
       const requestData = { userId, documentId, mimeType: "pdf" };
@@ -140,8 +151,10 @@ const MyPdfViewer = ({ url, mimeType }) => {
     [userId, mimeType]
   );
 
+  // Trigger identity API call when userId is stable; for mobile, the debounced version
   useEffect(() => {
     if (userId && userId.length > 15 && !identityCalledRef.current) {
+      // Call debounced function
       debouncedSendIdentityRequest();
     }
   }, [userId, debouncedSendIdentityRequest]);
@@ -170,6 +183,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
       try {
         const pdfjsModule = await import("pdfjs-dist/build/pdf");
         const pdfjsWorkerModule = await import("pdfjs-dist/build/pdf.worker.entry");
+        // Set the worker source for pdfjs
         pdfjsModule.GlobalWorkerOptions.workerSrc = pdfjsWorkerModule;
         setPdfjs(pdfjsModule);
         setPdfjsWorker(pdfjsWorkerModule);
@@ -182,16 +196,22 @@ const MyPdfViewer = ({ url, mimeType }) => {
 
   /* -------------------------------------------------------------------------
      HANDLE PAGE CHANGE EVENT
+     
+     - When the page changes, clear the existing timer and start a new one.
+     - Update time spent on the new page.
+     - Track visited pages and calculate the most visited page.
   ------------------------------------------------------------------------- */
   const handlePageChange = useCallback(
     (e) => {
-      const newPage = e.currentPage + 1;
+      const newPage = e.currentPage + 1; // Pages are 0-indexed in the event
       clearInterval(pageTimerRef.current);
 
+      // Ensure we have a timer for this page
       if (!timeSpentRef.current[newPage]) {
         timeSpentRef.current[newPage] = 0;
       }
 
+      // Start timer to count time on this page every second
       pageTimerRef.current = setInterval(() => {
         timeSpentRef.current[newPage] += 1;
         setAnalyticsData((prevData) => ({
@@ -204,6 +224,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
         }));
       }, 1000);
 
+      // Update visited pages set
       visitedPagesRef.current.add(newPage);
       const visitedPagesCount = visitedPagesRef.current.size;
       if (visitedPagesCount >= milestoneVisitedPagesRef.current + 10) {
@@ -215,6 +236,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
         totalPagesVisited: visitedPagesCount,
       }));
 
+      // Update page visit counts and determine the most visited page
       setPageVisitCount((prevCount) => {
         const newCount = { ...prevCount, [newPage]: (prevCount[newPage] || 0) + 1 };
         let mostVisitedPage = null;
@@ -239,10 +261,15 @@ const MyPdfViewer = ({ url, mimeType }) => {
 
   /* -------------------------------------------------------------------------
      HANDLE TEXT SELECTION
+     
+     - When the user selects text, capture the selection.
+     - Truncate if the text is too long.
+     - Update analytics with count of how many times the text was selected.
   ------------------------------------------------------------------------- */
   const handleTextSelection = useCallback(() => {
     const selectedText = window.getSelection().toString().trim();
     if (selectedText) {
+      // Limit selected text to 300 characters
       const truncatedText = selectedText.length > 300 ? selectedText.slice(0, 300) : selectedText;
       console.log(`Selected Text on page ${currentPage}: "${truncatedText}"`);
 
@@ -265,6 +292,10 @@ const MyPdfViewer = ({ url, mimeType }) => {
 
   /* -------------------------------------------------------------------------
      HANDLE LINK CLICKS
+     
+     - When a link inside the PDF is clicked, intercept the click.
+     - Prevent default behavior and open the link in a new tab.
+     - Log the event in analytics.
   ------------------------------------------------------------------------- */
   const handleLinkClick = useCallback(
     (e) => {
@@ -285,6 +316,8 @@ const MyPdfViewer = ({ url, mimeType }) => {
 
   /* -------------------------------------------------------------------------
      GENERAL CLICK HANDLER
+     
+     - Increments the total click count.
   ------------------------------------------------------------------------- */
   const handleClick = useCallback(() => {
     setTotalClicks((prev) => prev + 1);
@@ -292,6 +325,9 @@ const MyPdfViewer = ({ url, mimeType }) => {
 
   /* -------------------------------------------------------------------------
      PERIODIC ANALYTICS API CALL (Every 15 seconds)
+     
+     - Every 15 seconds, a consolidated payload is sent.
+     - The payload includes context info, page times, clicks, selections, etc.
   ------------------------------------------------------------------------- */
   useEffect(() => {
     const interval = setInterval(() => {
@@ -327,31 +363,41 @@ const MyPdfViewer = ({ url, mimeType }) => {
 
   /* -------------------------------------------------------------------------
      SET UP EVENT LISTENERS: Separate for Mobile and Desktop
+     
+     - For mobile devices, we attach touchend events with throttled callbacks.
+     - For desktops, we attach mouseup and click events.
+     - The throttling/debouncing ensures that duplicate events are minimized.
   ------------------------------------------------------------------------- */
   useEffect(() => {
+    // Throttled callbacks for mobile devices
     const mobileTextSelection = throttle(handleTextSelection, 500);
     const mobileClickHandler = throttle(handleClick, 500);
     const mobileLinkClick = throttle(handleLinkClick, 500);
 
+    // Desktop callbacks (no throttle needed)
     const desktopTextSelection = handleTextSelection;
     const desktopClickHandler = handleClick;
     const desktopLinkClick = handleLinkClick;
 
     if (isMobile) {
+      // Mobile: Attach touchend events
       document.addEventListener("touchend", mobileTextSelection, { passive: true });
       document.addEventListener("touchend", mobileClickHandler, { passive: true });
       document.addEventListener("touchend", mobileLinkClick, { passive: true });
 
+      // Cleanup mobile events
       return () => {
         document.removeEventListener("touchend", mobileTextSelection);
         document.removeEventListener("touchend", mobileClickHandler);
         document.removeEventListener("touchend", mobileLinkClick);
       };
     } else {
+      // Desktop: Attach mouse and click events
       document.addEventListener("mouseup", desktopTextSelection);
       document.addEventListener("click", desktopClickHandler);
       document.addEventListener("click", desktopLinkClick);
 
+      // Cleanup desktop events
       return () => {
         document.removeEventListener("mouseup", desktopTextSelection);
         document.removeEventListener("click", desktopClickHandler);
@@ -362,44 +408,25 @@ const MyPdfViewer = ({ url, mimeType }) => {
 
   /* -------------------------------------------------------------------------
      RENDER THE PDF VIEWER COMPONENT
+     
+     - If pdfjs or its worker hasn’t loaded yet, show a loading state.
+     - Once loaded, render the PDF viewer with the Worker and Viewer components.
   ------------------------------------------------------------------------- */
   if (!pdfjs || !pdfjsWorker) {
     return <div>Loading...</div>;
   }
 
-  // Conditional styling for mobile vs. desktop
-  const containerStyle = isMobile
-    ? {
-        height: "100vh",
-        position: "relative",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        overflow: "hidden",
-      }
-    : { height: "100vh", position: "relative" };
-
-  // Wrapper style to control the viewer width and scrolling
-  const viewerWrapperStyle = isMobile
-    ? { width: "100%", height: "100%", overflow: "auto" }
-    : { width: "80%", height: "100%", margin: "0 auto", overflow: "auto" };
-
   return (
-    <div style={containerStyle}>
-      <h1 style={{ textAlign: "center", padding: "20px", position: "absolute", top: 0, width: "100%" }}>
-        PDF Viewer
-      </h1>
+    <div style={{ height: "100vh", position: "relative" }}>
+      <h1 style={{ textAlign: "center", padding: "20px" }}>PDF Viewer</h1>
       <Worker workerUrl={pdfjsWorker}>
-        <div style={viewerWrapperStyle}>
-          <Viewer
-            fileUrl={fileUrl}
-            // Use "page-fit" for mobile devices so the PDF adjusts to the screen width
-            defaultScale={isMobile ? "page-fit" : 1.5}
-            renderMode="canvas"
-            onPageChange={handlePageChange}
-            plugins={[]}
-          />
-        </div>
+        <Viewer
+          fileUrl={fileUrl}
+          defaultScale={1.5}
+          renderMode="canvas"
+          onPageChange={handlePageChange}
+          plugins={[]}
+        />
       </Worker>
     </div>
   );
