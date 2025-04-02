@@ -395,95 +395,117 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
   // --------------------------------------------------
   // Periodic Analytics Submission (Every 15 Seconds)
   // --------------------------------------------------
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Calculate additional watch time if video is playing.
-      const currentTime = videoEl ? videoEl.currentTime : playedSeconds;
-      let additionalTime = 0;
-      if (analyticsRef.current.currentPlayStart !== null) {
-        additionalTime = currentTime - analyticsRef.current.currentPlayStart;
-      }
-      let updatedAnalytics = {
-        ...analyticsRef.current,
-        totalWatchTime: analyticsRef.current.totalWatchTime + additionalTime,
-      };
+// --------------------------------------------------
+// Periodic Analytics Submission (Every 15 Seconds)
+// --------------------------------------------------
+useEffect(() => {
+  if (!videoEl) {
+    console.log("videoEl not yet available; analytics interval not set.");
+    return;
+  }
+  
+  console.log("Starting analytics interval...");
+  const interval = setInterval(() => {
+    console.log("Analytics interval triggered.");
 
-      // Include additional fields from user context and props.
-      updatedAnalytics = {
-        ...updatedAnalytics,
-        outTime: new Date().toISOString(),
-        ip: ip || "",
-        location: location || "",
-        userId: userId || "",
-        region: region || "",
-        os: os || "",
-        device: device || "",
-        browser: browser || "",
-        videoId: window.location.pathname.split("/").pop() || "",
-        sourceUrl: url,
-      };
+    // Get the current time from the video element or fallback to playedSeconds.
+    const currentTime = videoEl ? videoEl.currentTime : playedSeconds;
 
-      const payload = JSON.stringify({
-        ...updatedAnalytics,
-        totalWatchTimeFormatted: formatTime(updatedAnalytics.totalWatchTime),
-        pauseResumeEvents: updatedAnalytics.pauseResumeEvents.map((event) => ({
-          pauseTime: event.pauseTime,
-          pauseTimeFormatted: formatTime(event.pauseTime),
-          resumeTime: event.resumeTime,
-          resumeTimeFormatted:
-            event.resumeTime !== null ? formatTime(event.resumeTime) : null,
-        })),
-        skipEvents: updatedAnalytics.skipEvents.map((event) => ({
-          from: event.from,
-          fromFormatted: formatTime(event.from),
-          to: event.to,
-          toFormatted: formatTime(event.to),
-        })),
-        jumpEvents: updatedAnalytics.jumpEvents.map((event) => ({
-          type: event.type,
-          from: event.from,
-          fromFormatted: formatTime(event.from),
-          to: event.to,
-          toFormatted: formatTime(event.to),
-        })),
-        speedEvents: updatedAnalytics.speedEvents.map((event) => ({
-          speed: event.speed,
-          startTime: event.startTime,
-          startTimeFormatted: formatTime(event.startTime),
-          endTime: event.endTime,
-          endTimeFormatted:
-            event.endTime !== null ? formatTime(event.endTime) : null,
-        })),
-        fullscreenEvents: updatedAnalytics.fullscreenEvents.map((event) => ({
-          entered: event.entered,
-          enteredFormatted: formatTime(event.entered),
-          exited: event.exited,
-          exitedFormatted:
-            event.exited !== null ? formatTime(event.exited) : null,
-        })),
-      });
+    // Calculate additional watch time only if video is playing.
+    let additionalTime = 0;
+    if (analyticsRef.current.currentPlayStart !== null) {
+      additionalTime = Math.max(0, currentTime - analyticsRef.current.currentPlayStart);
+    }
 
-      fetch(backendUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: payload,
+    // Update analytics.
+    let updatedAnalytics = {
+      ...analyticsRef.current,
+      totalWatchTime: analyticsRef.current.totalWatchTime + additionalTime,
+      // Update currentPlayStart if video is still playing.
+      currentPlayStart: videoEl && !videoEl.paused ? currentTime : analyticsRef.current.currentPlayStart,
+    };
+
+    // Attach extra fields.
+    updatedAnalytics = {
+      ...updatedAnalytics,
+      outTime: new Date().toISOString(),
+      ip: ip || "",
+      location: location || "",
+      userId: userId || "",
+      region: region || "",
+      os: os || "",
+      device: device || "",
+      browser: browser || "",
+      videoId: window.location.pathname.split("/").pop() || "",
+      sourceUrl: url,
+    };
+
+    const payload = JSON.stringify({
+      ...updatedAnalytics,
+      totalWatchTimeFormatted: formatTime(updatedAnalytics.totalWatchTime),
+      pauseResumeEvents: updatedAnalytics.pauseResumeEvents.map((event) => ({
+        pauseTime: event.pauseTime,
+        pauseTimeFormatted: formatTime(event.pauseTime),
+        resumeTime: event.resumeTime,
+        resumeTimeFormatted: event.resumeTime !== null ? formatTime(event.resumeTime) : null,
+      })),
+      skipEvents: updatedAnalytics.skipEvents.map((event) => ({
+        from: event.from,
+        fromFormatted: formatTime(event.from),
+        to: event.to,
+        toFormatted: formatTime(event.to),
+      })),
+      jumpEvents: updatedAnalytics.jumpEvents.map((event) => ({
+        type: event.type,
+        from: event.from,
+        fromFormatted: formatTime(event.from),
+        to: event.to,
+        toFormatted: formatTime(event.to),
+      })),
+      speedEvents: updatedAnalytics.speedEvents.map((event) => ({
+        speed: event.speed,
+        startTime: event.startTime,
+        startTimeFormatted: formatTime(event.startTime),
+        endTime: event.endTime,
+        endTimeFormatted: event.endTime !== null ? formatTime(event.endTime) : null,
+      })),
+      fullscreenEvents: updatedAnalytics.fullscreenEvents.map((event) => ({
+        entered: event.entered,
+        enteredFormatted: formatTime(event.entered),
+        exited: event.exited,
+        exitedFormatted: event.exited !== null ? formatTime(event.exited) : null,
+      })),
+    });
+
+    console.log("Sending analytics payload:", payload);
+
+    fetch(backendUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+    })
+      .then((response) => {
+        if (!response.ok) {
+          console.error("Analytics API response status:", response.status);
+          throw new Error("Network response was not ok");
+        }
+        return response.json();
       })
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error("Network response was not ok");
-          }
-          return response.json();
-        })
-        .then((result) => {
-          console.log("Periodic video analytics data sent successfully:", result);
-        })
-        .catch((error) =>
-          console.error("Error sending periodic video analytics data:", error)
-        );
-    }, 15000);
+      .then((result) => {
+        console.log("Periodic video analytics data sent successfully:", result);
+      })
+      .catch((error) =>
+        console.error("Error sending periodic video analytics data:", error)
+      );
+  }, 15000);
 
-    return () => clearInterval(interval);
-}, [ ip, location, userId, region, os, device, browser, url]);
+  return () => {
+    console.log("Clearing analytics interval.");
+    clearInterval(interval);
+  };
+}, [videoEl, ip, location, userId, region, os, device, browser, url]);
+
+
 
   return (
     <div
