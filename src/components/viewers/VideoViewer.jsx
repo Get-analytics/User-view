@@ -142,6 +142,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
   const handlePlay = () => {
     const currentTime = videoEl ? videoEl.currentTime : playedSeconds;
     setAnalytics((prev) => {
+      // If there is an ongoing pause event that hasn't been resumed, set its resumeTime
       const updatedPauseEvents = [...prev.pauseResumeEvents];
       if (
         updatedPauseEvents.length > 0 &&
@@ -174,12 +175,15 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
           { ...prev.currentSpeedEvent, endTime: currentTime },
         ];
       }
+      // Calculate the segment watch time before pausing.
+      let segmentWatchTime = 0;
+      if (!videoEl.paused && prev.currentPlayStart !== null) {
+        segmentWatchTime = Math.max(0, currentTime - prev.currentPlayStart);
+      }
       return {
         ...prev,
         pauseCount: prev.pauseCount + 1,
-        totalWatchTime:
-          prev.totalWatchTime +
-          (prev.currentPlayStart !== null ? currentTime - prev.currentPlayStart : 0),
+        totalWatchTime: prev.totalWatchTime + segmentWatchTime,
         pauseResumeEvents: [
           ...prev.pauseResumeEvents,
           { pauseTime: currentTime, resumeTime: null },
@@ -191,14 +195,13 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     });
   };
 
-  // Native seeking (for timeline drags).
+  // ----- Native Seeking Handler -----
   const handleSeeking = () => {
     if (!videoEl) return;
     if (!isDragging && seekStartRef.current === null) {
       seekStartRef.current = videoEl.currentTime;
     }
   };
-  
 
   const handleSeeked = () => {
     if (!videoEl) return;
@@ -211,20 +214,98 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     const newTime = videoEl.currentTime;
     const fromTime =
       seekStartRef.current !== null ? seekStartRef.current : prevTimeRef.current;
-    if (newTime !== fromTime) {
-      setAnalytics((prev) => ({
-        ...prev,
-        seekCount: prev.seekCount + 1,
-        skipEvents: [...prev.skipEvents, { from: fromTime, to: newTime }],
-        // Update currentPlayStart if video is playing
-        currentPlayStart: !videoEl.paused ? newTime : null,
-      }));
+    // Calculate segment watch time before the seek.
+    let segmentWatchTime = 0;
+    if (!videoEl.paused && analyticsRef.current.currentPlayStart !== null) {
+      segmentWatchTime = Math.max(0, newTime - analyticsRef.current.currentPlayStart);
     }
+    setAnalytics((prev) => ({
+      ...prev,
+      totalWatchTime: prev.totalWatchTime + segmentWatchTime,
+      seekCount: prev.seekCount + 1,
+      skipEvents: [...prev.skipEvents, { from: fromTime, to: newTime }],
+      // Reset currentPlayStart to newTime if video is playing.
+      currentPlayStart: !videoEl.paused ? newTime : null,
+    }));
     seekStartRef.current = null;
     prevTimeRef.current = newTime;
   };
 
-  
+  // ----- Timeline Drag (Progress Bar) Handlers -----
+  const handleTimelineMouseDown = () => {
+    if (videoEl) {
+      setIsDragging(true);
+      setDragStartTime(videoEl.currentTime);
+    }
+  };
+
+  const handleTimelineMouseUp = () => {
+    if (videoEl && isDragging) {
+      setIsDragging(false);
+      const dragEndTime = videoEl.currentTime;
+      // Calculate segment watch time before timeline drag ends.
+      let segmentWatchTime = 0;
+      if (!videoEl.paused && analyticsRef.current.currentPlayStart !== null) {
+        segmentWatchTime = Math.max(0, dragEndTime - analyticsRef.current.currentPlayStart);
+      }
+      setAnalytics((prev) => ({
+        ...prev,
+        totalWatchTime: prev.totalWatchTime + segmentWatchTime,
+        seekCount: prev.seekCount + 1,
+        skipEvents: [...prev.skipEvents, { from: dragStartTime, to: dragEndTime }],
+        currentPlayStart: !videoEl.paused ? dragEndTime : null,
+      }));
+      setDragStartTime(null);
+      prevTimeRef.current = dragEndTime;
+      setDragSeekRecorded(true);
+    }
+  };
+
+  // ----- 10‑Second Jump Handlers -----
+  const handleReplay = () => {
+    if (!videoEl) return;
+    const currentTime = videoEl.currentTime;
+    const newTime = Math.max(0, currentTime - 10);
+    jumpTriggeredRef.current = true;
+    // Calculate segment watch time before jump.
+    let segmentWatchTime = 0;
+    if (!videoEl.paused && analyticsRef.current.currentPlayStart !== null) {
+      segmentWatchTime = Math.max(0, currentTime - analyticsRef.current.currentPlayStart);
+    }
+    setAnalytics((prev) => ({
+      ...prev,
+      totalWatchTime: prev.totalWatchTime + segmentWatchTime,
+      jumpEvents: [
+        ...prev.jumpEvents,
+        { type: "replay", from: currentTime, to: newTime },
+      ],
+      currentPlayStart: !videoEl.paused ? newTime : null,
+    }));
+    videoEl.currentTime = newTime;
+  };
+
+  const handleForward = () => {
+    if (!videoEl) return;
+    const currentTime = videoEl.currentTime;
+    const newTime = Math.min(videoDuration, currentTime + 10);
+    jumpTriggeredRef.current = true;
+    // Calculate segment watch time before jump.
+    let segmentWatchTime = 0;
+    if (!videoEl.paused && analyticsRef.current.currentPlayStart !== null) {
+      segmentWatchTime = Math.max(0, currentTime - analyticsRef.current.currentPlayStart);
+    }
+    setAnalytics((prev) => ({
+      ...prev,
+      totalWatchTime: prev.totalWatchTime + segmentWatchTime,
+      jumpEvents: [
+        ...prev.jumpEvents,
+        { type: "forward", from: currentTime, to: newTime },
+      ],
+      currentPlayStart: !videoEl.paused ? newTime : null,
+    }));
+    videoEl.currentTime = newTime;
+  };
+
   const handleTimeUpdate = () => {
     if (videoEl) {
       prevTimeRef.current = videoEl.currentTime;
@@ -297,38 +378,6 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
   };
 
   // --------------------------------------------------
-  // 10‑Second Jump Analytics (Forward/Replay)
-  // --------------------------------------------------
-// 10‑Second Jump Analytics (Forward/Replay)
-const handleReplay = () => {
-  if (!videoEl) return;
-  const currentTime = videoEl.currentTime;
-  const newTime = Math.max(0, currentTime - 10);
-  jumpTriggeredRef.current = true;
-  setAnalytics((prev) => ({
-    ...prev,
-    jumpEvents: [...prev.jumpEvents, { type: "replay", from: currentTime, to: newTime }],
-    // Reset currentPlayStart to newTime after jump
-    currentPlayStart: !videoEl.paused ? newTime : null,
-  }));
-  videoEl.currentTime = newTime;
-};
-
-const handleForward = () => {
-  if (!videoEl) return;
-  const currentTime = videoEl.currentTime;
-  const newTime = Math.min(videoDuration, currentTime + 10);
-  jumpTriggeredRef.current = true;
-  setAnalytics((prev) => ({
-    ...prev,
-    jumpEvents: [...prev.jumpEvents, { type: "forward", from: currentTime, to: newTime }],
-    // Reset currentPlayStart to newTime after jump
-    currentPlayStart: !videoEl.paused ? newTime : null,
-  }));
-  videoEl.currentTime = newTime;
-};
-
-  // --------------------------------------------------
   // Attach Native Video Element Event Listeners
   // --------------------------------------------------
   useEffect(() => {
@@ -368,141 +417,109 @@ const handleForward = () => {
     }
   }, [videoEl, isDragging, dragSeekRecorded, dragStartTime]);
 
-  const handleTimelineMouseDown = () => {
-    if (videoEl) {
-      setIsDragging(true);
-      setDragStartTime(videoEl.currentTime);
-    }
-  };
-
-  const handleTimelineMouseUp = () => {
-    if (videoEl && isDragging) {
-      setIsDragging(false);
-      const dragEndTime = videoEl.currentTime;
-      setAnalytics((prev) => ({
-        ...prev,
-        seekCount: prev.seekCount + 1,
-        skipEvents: [...prev.skipEvents, { from: dragStartTime, to: dragEndTime }],
-        // Update currentPlayStart if video is playing
-        currentPlayStart: !videoEl.paused ? dragEndTime : null,
-      }));
-      setDragStartTime(null);
-      prevTimeRef.current = dragEndTime;
-      setDragSeekRecorded(true);
-    }
-  };
-
   // --------------------------------------------------
   // Periodic Analytics Submission (Every 15 Seconds)
   // --------------------------------------------------
-// --------------------------------------------------
-// Periodic Analytics Submission (Every 15 Seconds)
-// --------------------------------------------------
-// Periodic Analytics Submission (Every 15 Seconds)
-useEffect(() => {
-  if (!videoEl) {
-    console.log("videoEl not available; analytics interval not set.");
-    return;
-  }
-
-  console.log("Starting analytics interval...");
-  const interval = setInterval(async () => {
-    try {
-      // Get the current playback time
-      const currentTime = videoEl.currentTime || playedSeconds;
-      
-      // Calculate additional watch time if a continuous play segment exists
-      let additionalTime = 0;
-      if (analyticsRef.current.currentPlayStart !== null) {
-        additionalTime = Math.max(0, currentTime - analyticsRef.current.currentPlayStart);
-      }
-
-      // Update the analytics object with additional watch time
-      let updatedAnalytics = {
-        ...analyticsRef.current,
-        totalWatchTime: analyticsRef.current.totalWatchTime + additionalTime,
-        currentPlayStart: videoEl && !videoEl.paused ? currentTime : analyticsRef.current.currentPlayStart,
-      };
-
-      // Attach extra fields for backend logging
-      updatedAnalytics = {
-        ...updatedAnalytics,
-        outTime: new Date().toISOString(),
-        ip: ip || "",
-        location: location || "",
-        userId: userId || "",
-        region: region || "",
-        os: os || "",
-        device: device || "",
-        browser: browser || "",
-        videoId: window.location.pathname.split("/").pop() || "",
-        sourceUrl: url,
-      };
-
-      // Build the payload, including formatted fields
-      const payload = JSON.stringify({
-        ...updatedAnalytics,
-        totalWatchTimeFormatted: formatTime(updatedAnalytics.totalWatchTime),
-        pauseResumeEvents: updatedAnalytics.pauseResumeEvents.map((event) => ({
-          pauseTime: event.pauseTime,
-          pauseTimeFormatted: formatTime(event.pauseTime),
-          resumeTime: event.resumeTime,
-          resumeTimeFormatted: event.resumeTime !== null ? formatTime(event.resumeTime) : null,
-        })),
-        skipEvents: updatedAnalytics.skipEvents.map((event) => ({
-          from: event.from,
-          fromFormatted: formatTime(event.from),
-          to: event.to,
-          toFormatted: formatTime(event.to),
-        })),
-        jumpEvents: updatedAnalytics.jumpEvents.map((event) => ({
-          type: event.type,
-          from: event.from,
-          fromFormatted: formatTime(event.from),
-          to: event.to,
-          toFormatted: formatTime(event.to),
-        })),
-        speedEvents: updatedAnalytics.speedEvents.map((event) => ({
-          speed: event.speed,
-          startTime: event.startTime,
-          startTimeFormatted: formatTime(event.startTime),
-          endTime: event.endTime,
-          endTimeFormatted: event.endTime !== null ? formatTime(event.endTime) : null,
-        })),
-        fullscreenEvents: updatedAnalytics.fullscreenEvents.map((event) => ({
-          entered: event.entered,
-          enteredFormatted: formatTime(event.entered),
-          exited: event.exited,
-          exitedFormatted: event.exited !== null ? formatTime(event.exited) : null,
-        })),
-      });
-
-      console.log("Sending analytics payload:", payload);
-      const response = await fetch(backendUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: payload,
-      });
-
-      if (!response.ok) {
-        console.error("Analytics API response status:", response.status);
-      } else {
-        const result = await response.json();
-        console.log("Periodic analytics data sent successfully:", result);
-      }
-    } catch (err) {
-      console.error("Error sending periodic analytics data:", err);
+  useEffect(() => {
+    if (!videoEl) {
+      console.log("videoEl not available; analytics interval not set.");
+      return;
     }
-  }, 15000);
 
-  return () => {
-    console.log("Clearing analytics interval.");
-    clearInterval(interval);
-  };
-}, [videoEl, ip, location, userId, region, os, device, browser, url]);
+    console.log("Starting analytics interval...");
+    const interval = setInterval(async () => {
+      try {
+        // Get the current playback time
+        const currentTime = videoEl.currentTime || playedSeconds;
+        // Calculate additional watch time if a continuous play segment exists
+        let additionalTime = 0;
+        if (analyticsRef.current.currentPlayStart !== null && !videoEl.paused) {
+          additionalTime = Math.max(0, currentTime - analyticsRef.current.currentPlayStart);
+        }
 
+        // Update the analytics object with additional watch time
+        let updatedAnalytics = {
+          ...analyticsRef.current,
+          totalWatchTime: analyticsRef.current.totalWatchTime + additionalTime,
+          currentPlayStart: videoEl && !videoEl.paused ? currentTime : analyticsRef.current.currentPlayStart,
+        };
 
+        // Attach extra fields for backend logging
+        updatedAnalytics = {
+          ...updatedAnalytics,
+          outTime: new Date().toISOString(),
+          ip: ip || "",
+          location: location || "",
+          userId: userId || "",
+          region: region || "",
+          os: os || "",
+          device: device || "",
+          browser: browser || "",
+          videoId: window.location.pathname.split("/").pop() || "",
+          sourceUrl: url,
+        };
 
+        // Build the payload, including formatted fields
+        const payload = JSON.stringify({
+          ...updatedAnalytics,
+          totalWatchTimeFormatted: formatTime(updatedAnalytics.totalWatchTime),
+          pauseResumeEvents: updatedAnalytics.pauseResumeEvents.map((event) => ({
+            pauseTime: event.pauseTime,
+            pauseTimeFormatted: formatTime(event.pauseTime),
+            resumeTime: event.resumeTime,
+            resumeTimeFormatted: event.resumeTime !== null ? formatTime(event.resumeTime) : null,
+          })),
+          skipEvents: updatedAnalytics.skipEvents.map((event) => ({
+            from: event.from,
+            fromFormatted: formatTime(event.from),
+            to: event.to,
+            toFormatted: formatTime(event.to),
+          })),
+          jumpEvents: updatedAnalytics.jumpEvents.map((event) => ({
+            type: event.type,
+            from: event.from,
+            fromFormatted: formatTime(event.from),
+            to: event.to,
+            toFormatted: formatTime(event.to),
+          })),
+          speedEvents: updatedAnalytics.speedEvents.map((event) => ({
+            speed: event.speed,
+            startTime: event.startTime,
+            startTimeFormatted: formatTime(event.startTime),
+            endTime: event.endTime,
+            endTimeFormatted: event.endTime !== null ? formatTime(event.endTime) : null,
+          })),
+          fullscreenEvents: updatedAnalytics.fullscreenEvents.map((event) => ({
+            entered: event.entered,
+            enteredFormatted: formatTime(event.entered),
+            exited: event.exited,
+            exitedFormatted: event.exited !== null ? formatTime(event.exited) : null,
+          })),
+        });
+
+        console.log("Sending analytics payload:", payload);
+        const response = await fetch(backendUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+        });
+
+        if (!response.ok) {
+          console.error("Analytics API response status:", response.status);
+        } else {
+          const result = await response.json();
+          console.log("Periodic analytics data sent successfully:", result);
+        }
+      } catch (err) {
+        console.error("Error sending periodic analytics data:", err);
+      }
+    }, 15000);
+
+    return () => {
+      console.log("Clearing analytics interval.");
+      clearInterval(interval);
+    };
+  }, [videoEl, ip, location, userId, region, os, device, browser, url]);
 
   return (
     <div
