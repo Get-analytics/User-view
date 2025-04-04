@@ -31,7 +31,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     const requestData = { userId, documentId, mimeType: "video" };
 
     try {
-      const response = await fetch("https://user-view-backend.vercel.app/api/user/identify", {
+      const response = await fetch("http://localhost:8000/api/user/identify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestData),
@@ -84,7 +84,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
   });
 
   // Backend API endpoint.
-  const backendUrl = "https://user-view-backend.vercel.app/api/v1/video/analytics";
+  const backendUrl = "http://localhost:8000/api/v1/video/analytics";
 
   // Helper: Format seconds.
   const formatTime = (seconds) => {
@@ -198,6 +198,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
       seekStartRef.current = videoEl.currentTime;
     }
   };
+  
 
   const handleSeeked = () => {
     if (!videoEl) return;
@@ -215,15 +216,15 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
         ...prev,
         seekCount: prev.seekCount + 1,
         skipEvents: [...prev.skipEvents, { from: fromTime, to: newTime }],
+        // Update currentPlayStart if video is playing
+        currentPlayStart: !videoEl.paused ? newTime : null,
       }));
     }
     seekStartRef.current = null;
     prevTimeRef.current = newTime;
-    if (!videoEl.paused) {
-      setAnalytics((prev) => ({ ...prev, currentPlayStart: newTime }));
-    }
   };
 
+  
   const handleTimeUpdate = () => {
     if (videoEl) {
       prevTimeRef.current = videoEl.currentTime;
@@ -298,37 +299,34 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
   // --------------------------------------------------
   // 10‑Second Jump Analytics (Forward/Replay)
   // --------------------------------------------------
-  const handleReplay = () => {
-    if (!videoEl) return;
-    const currentTime = videoEl.currentTime;
-    const newTime = Math.max(0, currentTime - 10);
-    jumpTriggeredRef.current = true;
-    setAnalytics((prev) => ({
-      ...prev,
-      jumpEvents: [
-        ...prev.jumpEvents,
-        { type: "replay", from: currentTime, to: newTime },
-      ],
-      currentPlayStart: newTime,
-    }));
-    videoEl.currentTime = newTime;
-  };
+// 10‑Second Jump Analytics (Forward/Replay)
+const handleReplay = () => {
+  if (!videoEl) return;
+  const currentTime = videoEl.currentTime;
+  const newTime = Math.max(0, currentTime - 10);
+  jumpTriggeredRef.current = true;
+  setAnalytics((prev) => ({
+    ...prev,
+    jumpEvents: [...prev.jumpEvents, { type: "replay", from: currentTime, to: newTime }],
+    // Reset currentPlayStart to newTime after jump
+    currentPlayStart: !videoEl.paused ? newTime : null,
+  }));
+  videoEl.currentTime = newTime;
+};
 
-  const handleForward = () => {
-    if (!videoEl) return;
-    const currentTime = videoEl.currentTime;
-    const newTime = Math.min(videoDuration, currentTime + 10);
-    jumpTriggeredRef.current = true;
-    setAnalytics((prev) => ({
-      ...prev,
-      jumpEvents: [
-        ...prev.jumpEvents,
-        { type: "forward", from: currentTime, to: newTime },
-      ],
-      currentPlayStart: newTime,
-    }));
-    videoEl.currentTime = newTime;
-  };
+const handleForward = () => {
+  if (!videoEl) return;
+  const currentTime = videoEl.currentTime;
+  const newTime = Math.min(videoDuration, currentTime + 10);
+  jumpTriggeredRef.current = true;
+  setAnalytics((prev) => ({
+    ...prev,
+    jumpEvents: [...prev.jumpEvents, { type: "forward", from: currentTime, to: newTime }],
+    // Reset currentPlayStart to newTime after jump
+    currentPlayStart: !videoEl.paused ? newTime : null,
+  }));
+  videoEl.currentTime = newTime;
+};
 
   // --------------------------------------------------
   // Attach Native Video Element Event Listeners
@@ -385,6 +383,8 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
         ...prev,
         seekCount: prev.seekCount + 1,
         skipEvents: [...prev.skipEvents, { from: dragStartTime, to: dragEndTime }],
+        // Update currentPlayStart if video is playing
+        currentPlayStart: !videoEl.paused ? dragEndTime : null,
       }));
       setDragStartTime(null);
       prevTimeRef.current = dragEndTime;
