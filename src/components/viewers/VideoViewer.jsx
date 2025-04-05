@@ -25,7 +25,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     const requestData = { userId, documentId, mimeType: "video" };
 
     try {
-      const response = await fetch("http://localhost:8000/api/user/identify", {
+      const response = await fetch("https://filescene.onrender.com/api/user/identify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestData),
@@ -84,7 +84,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     }
   }, [entryTime]);
 
-  const backendUrl = "http://localhost:8000/api/v1/video/analytics";
+  const backendUrl = "https://filescene.onrender.com/api/v1/video/analytics";
 
   // Helper: Format seconds nicely.
   const formatTime = (seconds) => {
@@ -159,6 +159,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     setAnalytics((prev) => ({
       ...prev,
       playCount: prev.playCount + 1,
+      // If resuming from a pause, currentPlayStart might be null, so start here.
       currentPlayStart: currentTime,
     }));
   };
@@ -183,6 +184,11 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
   // When a seek or drag is initiated, record the starting time.
   const handleSeeking = () => {
     if (!videoEl) return;
+    // Record seek start if not dragging.
+    if (!isDragging && analyticsRef.current.currentPlayStart === null) {
+      // If currentPlayStart is null, this means playback was paused; no update.
+      return;
+    }
     console.log("Seeking started at:", videoEl.currentTime);
   };
 
@@ -197,7 +203,9 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     }
     const newTime = videoEl.currentTime;
     console.log("Seeked event to:", newTime);
+    // Update watch time with new time (assuming video is playing).
     updateWatchTime(newTime);
+    // Record seek event.
     setAnalytics((prev) => ({
       ...prev,
       seekCount: prev.seekCount + 1,
@@ -206,7 +214,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     prevTimeRef.current = newTime;
   };
 
-  // For timeline dragging: add both mouse and touch events for mobile compatibility.
+  // For timeline dragging:
   const handleTimelineMouseDown = () => {
     if (videoEl) {
       setIsDragging(true);
@@ -341,21 +349,15 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, [videoEl, playedSeconds]);
 
-  // -------------------- Attach Timeline Drag Listeners (including mobile) --------------------
+  // Attach timeline drag listeners.
   useEffect(() => {
     const timeline = document.querySelector(".video-react-progress-control");
     if (timeline) {
-      // For desktop events:
       timeline.addEventListener("mousedown", handleTimelineMouseDown);
       timeline.addEventListener("mouseup", handleTimelineMouseUp);
-      // For mobile touch events:
-      timeline.addEventListener("touchstart", handleTimelineMouseDown);
-      timeline.addEventListener("touchend", handleTimelineMouseUp);
       return () => {
         timeline.removeEventListener("mousedown", handleTimelineMouseDown);
         timeline.removeEventListener("mouseup", handleTimelineMouseUp);
-        timeline.removeEventListener("touchstart", handleTimelineMouseDown);
-        timeline.removeEventListener("touchend", handleTimelineMouseUp);
       };
     }
   }, [videoEl, isDragging, dragStartTime]);
@@ -376,7 +378,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
         }
         const updatedAnalytics = {
           ...analyticsRef.current,
-          inTime: entryTime, // Static entry time
+          inTime: entryTime, // Add the static entry time
           outTime: new Date().toISOString(),
           ip: ip || "",
           location: location || "",
