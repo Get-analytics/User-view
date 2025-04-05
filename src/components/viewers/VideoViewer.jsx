@@ -13,20 +13,14 @@ import "video-react/dist/video-react.css";
 import { useUser } from "../../context/Usercontext";
 
 const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
-  // Extract values from user context.
+  // -------------------- User Context & Identification --------------------
   const { ip, location, userId, region, os, device, browser } = useUser();
   console.log(ip, location, userId, region, os, device, browser, "user context data");
   console.log(window.location.pathname, "videoId from path");
-  console.log(userId, "userid");
 
-  // -------------------- User Identification API Logic --------------------
-  // Use a ref to ensure the API call happens only once.
   const apiCalledRef = useRef(false);
-
-  // Identification API call: fires once after 3 seconds if userId is valid.
   const sendIdentificationRequest = useCallback(async () => {
     if (!userId || !window.location.pathname) return;
-
     const documentId = window.location.pathname.split("/").pop();
     const requestData = { userId, documentId, mimeType: "video" };
 
@@ -51,13 +45,12 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
       const timer = setTimeout(() => {
         sendIdentificationRequest();
         apiCalledRef.current = true;
-      }, 3000); // 3-second delay
-
+      }, 3000);
       return () => clearTimeout(timer);
     }
   }, [userId, sendIdentificationRequest]);
 
-  // -------------------- Video Analytics Code --------------------
+  // -------------------- Video & Analytics Setup --------------------
   const playerRef = useRef(null);
   const [videoEl, setVideoEl] = useState(null); // HTMLVideoElement
   const [playedSeconds, setPlayedSeconds] = useState(0);
@@ -67,26 +60,33 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
   const [isPiP, setIsPiP] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Extended analytics state.
+  // Analytics state – includes accumulated totalWatchTime and currentPlayStart
   const [analytics, setAnalytics] = useState({
     totalWatchTime: 0,
     playCount: 0,
     pauseCount: 0,
     seekCount: 0,
-    pauseResumeEvents: [], // Each: { pauseTime, resumeTime }
-    skipEvents: [],        // For timeline drags (native seek events)
-    jumpEvents: [],        // For 10-sec forward/backward jumps
-    speedEvents: [],       // Completed speed events: { speed, startTime, endTime }
-    currentSpeedEvent: null, // Ongoing speed event
-    fullscreenEvents: [],  // Each: { entered, exited }
+    pauseResumeEvents: [], // { pauseTime, resumeTime }
+    skipEvents: [],        // { from, to } for seeks or drags
+    jumpEvents: [],        // { type, from, to } for 10-sec jumps
+    speedEvents: [],       // { speed, startTime, endTime }
+    currentSpeedEvent: null,
+    fullscreenEvents: [],  // { entered, exited }
     download: false,
-    currentPlayStart: null, // Start time of current continuous play segment
+    currentPlayStart: null, // The timestamp when continuous playback began
   });
 
-  // Backend API endpoint.
+  // New state for the user's entry time (set only once)
+  const [entryTime, setEntryTime] = useState(null);
+  useEffect(() => {
+    if (!entryTime) {
+      setEntryTime(new Date().toISOString());
+    }
+  }, [entryTime]);
+
   const backendUrl = "http://localhost:8000/api/v1/video/analytics";
 
-  // Helper: Format seconds.
+  // Helper: Format seconds nicely.
   const formatTime = (seconds) => {
     seconds = Math.floor(seconds);
     const hrs = Math.floor(seconds / 3600);
@@ -97,23 +97,37 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     else return `${secs}s`;
   };
 
-  // Create a ref to always hold the latest analytics state.
+  // A ref to always hold the latest analytics state.
   const analyticsRef = useRef(analytics);
   useEffect(() => {
     analyticsRef.current = analytics;
   }, [analytics]);
 
-  // Refs for previous time and seek start.
+  // Refs for tracking previous times and dragging
   const prevTimeRef = useRef(0);
-  const seekStartRef = useRef(null);
-  // For timeline dragging.
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartTime, setDragStartTime] = useState(null);
-  const [dragSeekRecorded, setDragSeekRecorded] = useState(false);
-  // Flag to mark that a jump (10-sec button) was triggered.
+  // A flag to mark if a jump (10-sec forward/backward) was triggered.
   const jumpTriggeredRef = useRef(false);
 
-  // Update playedSeconds every 500ms.
+  // -------------------- Centralized Watch Time Updater --------------------
+  // Updates totalWatchTime based on the elapsed time from currentPlayStart to newTime.
+  // If isPlaying is true, we reset currentPlayStart to newTime; otherwise, we clear it.
+  const updateWatchTime = (newTime, isPlaying = true) => {
+    setAnalytics((prev) => {
+      let segmentTime = 0;
+      if (prev.currentPlayStart !== null && newTime >= prev.currentPlayStart) {
+        segmentTime = newTime - prev.currentPlayStart;
+      }
+      return {
+        ...prev,
+        totalWatchTime: prev.totalWatchTime + segmentTime,
+        currentPlayStart: isPlaying ? newTime : null,
+      };
+    });
+  };
+
+  // -------------------- Periodic playedSeconds Update --------------------
   useEffect(() => {
     const interval = setInterval(() => {
       if (playerRef.current && playerRef.current.getState) {
@@ -136,106 +150,76 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     }
   }, [playbackRate, videoEl]);
 
-  // --------------------------------------------------
-  // Playback Analytics Handlers (Play, Pause, Seek)
-  // --------------------------------------------------
+  // -------------------- Playback Event Handlers --------------------
   const handlePlay = () => {
-    const currentTime = videoEl ? videoEl.currentTime : playedSeconds;
-    setAnalytics((prev) => {
-      // If there is an ongoing pause event that hasn't been resumed, set its resumeTime
-      const updatedPauseEvents = [...prev.pauseResumeEvents];
-      if (
-        updatedPauseEvents.length > 0 &&
-        updatedPauseEvents[updatedPauseEvents.length - 1].resumeTime === null
-      ) {
-        updatedPauseEvents[updatedPauseEvents.length - 1] = {
-          ...updatedPauseEvents[updatedPauseEvents.length - 1],
-          resumeTime: currentTime,
-        };
-      }
-      return {
-        ...prev,
-        playCount: prev.playCount + 1,
-        currentPlayStart: currentTime,
-        pauseResumeEvents: updatedPauseEvents,
-        currentSpeedEvent:
-          prev.currentSpeedEvent ||
-          { speed: playbackRate, startTime: currentTime, endTime: null },
-      };
-    });
+    if (!videoEl) return;
+    const currentTime = videoEl.currentTime;
+    console.log("Play event at:", currentTime);
+    // When playing, simply start a new continuous segment.
+    setAnalytics((prev) => ({
+      ...prev,
+      playCount: prev.playCount + 1,
+      // If resuming from a pause, currentPlayStart might be null, so start here.
+      currentPlayStart: currentTime,
+    }));
   };
 
   const handlePause = () => {
-    const currentTime = videoEl ? videoEl.currentTime : playedSeconds;
-    setAnalytics((prev) => {
-      let newSpeedEvents = prev.speedEvents;
-      if (prev.currentSpeedEvent) {
-        newSpeedEvents = [
-          ...newSpeedEvents,
-          { ...prev.currentSpeedEvent, endTime: currentTime },
-        ];
-      }
-      // Calculate the segment watch time before pausing.
-      let segmentWatchTime = 0;
-      if (!videoEl.paused && prev.currentPlayStart !== null) {
-        segmentWatchTime = Math.max(0, currentTime - prev.currentPlayStart);
-      }
-      return {
-        ...prev,
-        pauseCount: prev.pauseCount + 1,
-        totalWatchTime: prev.totalWatchTime + segmentWatchTime,
-        pauseResumeEvents: [
-          ...prev.pauseResumeEvents,
-          { pauseTime: currentTime, resumeTime: null },
-        ],
-        currentPlayStart: null,
-        currentSpeedEvent: null,
-        speedEvents: newSpeedEvents,
-      };
-    });
+    if (!videoEl) return;
+    const currentTime = videoEl.currentTime;
+    console.log("Pause event at:", currentTime);
+    // On pause, update the watch time with the current segment.
+    updateWatchTime(currentTime, false);
+    setAnalytics((prev) => ({
+      ...prev,
+      pauseCount: prev.pauseCount + 1,
+      pauseResumeEvents: [
+        ...prev.pauseResumeEvents,
+        { pauseTime: currentTime, resumeTime: null },
+      ],
+    }));
   };
 
-  // ----- Native Seeking Handler -----
+  // -------------------- Seek & Drag Handlers --------------------
+  // When a seek or drag is initiated, record the starting time.
   const handleSeeking = () => {
     if (!videoEl) return;
-    if (!isDragging && seekStartRef.current === null) {
-      seekStartRef.current = videoEl.currentTime;
+    // Record seek start if not dragging.
+    if (!isDragging && analyticsRef.current.currentPlayStart === null) {
+      // If currentPlayStart is null, this means playback was paused; no update.
+      return;
     }
+    console.log("Seeking started at:", videoEl.currentTime);
   };
 
+  // When seeking completes, update the watch time based on new currentTime.
   const handleSeeked = () => {
     if (!videoEl) return;
     if (jumpTriggeredRef.current) {
       jumpTriggeredRef.current = false;
-      seekStartRef.current = null;
       prevTimeRef.current = videoEl.currentTime;
+      console.log("Seeked (jump triggered) at:", videoEl.currentTime);
       return;
     }
     const newTime = videoEl.currentTime;
-    const fromTime =
-      seekStartRef.current !== null ? seekStartRef.current : prevTimeRef.current;
-    // Calculate segment watch time before the seek.
-    let segmentWatchTime = 0;
-    if (!videoEl.paused && analyticsRef.current.currentPlayStart !== null) {
-      segmentWatchTime = Math.max(0, newTime - analyticsRef.current.currentPlayStart);
-    }
+    console.log("Seeked event to:", newTime);
+    // Update watch time with new time (assuming video is playing).
+    updateWatchTime(newTime);
+    // Record seek event.
     setAnalytics((prev) => ({
       ...prev,
-      totalWatchTime: prev.totalWatchTime + segmentWatchTime,
       seekCount: prev.seekCount + 1,
-      skipEvents: [...prev.skipEvents, { from: fromTime, to: newTime }],
-      // Reset currentPlayStart to newTime if video is playing.
-      currentPlayStart: !videoEl.paused ? newTime : null,
+      skipEvents: [...prev.skipEvents, { from: prevTimeRef.current, to: newTime }],
     }));
-    seekStartRef.current = null;
     prevTimeRef.current = newTime;
   };
 
-  // ----- Timeline Drag (Progress Bar) Handlers -----
+  // For timeline dragging:
   const handleTimelineMouseDown = () => {
     if (videoEl) {
       setIsDragging(true);
       setDragStartTime(videoEl.currentTime);
+      console.log("Timeline drag started at:", videoEl.currentTime);
     }
   };
 
@@ -243,43 +227,29 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     if (videoEl && isDragging) {
       setIsDragging(false);
       const dragEndTime = videoEl.currentTime;
-      // Calculate segment watch time before timeline drag ends.
-      let segmentWatchTime = 0;
-      if (!videoEl.paused && analyticsRef.current.currentPlayStart !== null) {
-        segmentWatchTime = Math.max(0, dragEndTime - analyticsRef.current.currentPlayStart);
-      }
+      console.log("Timeline drag ended at:", dragEndTime);
+      updateWatchTime(dragEndTime);
       setAnalytics((prev) => ({
         ...prev,
-        totalWatchTime: prev.totalWatchTime + segmentWatchTime,
         seekCount: prev.seekCount + 1,
         skipEvents: [...prev.skipEvents, { from: dragStartTime, to: dragEndTime }],
-        currentPlayStart: !videoEl.paused ? dragEndTime : null,
       }));
-      setDragStartTime(null);
       prevTimeRef.current = dragEndTime;
-      setDragSeekRecorded(true);
+      setDragStartTime(null);
     }
   };
 
-  // ----- 10‑Second Jump Handlers -----
+  // -------------------- 10‑Second Jump Handlers --------------------
   const handleReplay = () => {
     if (!videoEl) return;
     const currentTime = videoEl.currentTime;
     const newTime = Math.max(0, currentTime - 10);
     jumpTriggeredRef.current = true;
-    // Calculate segment watch time before jump.
-    let segmentWatchTime = 0;
-    if (!videoEl.paused && analyticsRef.current.currentPlayStart !== null) {
-      segmentWatchTime = Math.max(0, currentTime - analyticsRef.current.currentPlayStart);
-    }
+    console.log(`Replay jump from ${currentTime} to ${newTime}`);
+    updateWatchTime(newTime);
     setAnalytics((prev) => ({
       ...prev,
-      totalWatchTime: prev.totalWatchTime + segmentWatchTime,
-      jumpEvents: [
-        ...prev.jumpEvents,
-        { type: "replay", from: currentTime, to: newTime },
-      ],
-      currentPlayStart: !videoEl.paused ? newTime : null,
+      jumpEvents: [...prev.jumpEvents, { type: "replay", from: currentTime, to: newTime }],
     }));
     videoEl.currentTime = newTime;
   };
@@ -289,19 +259,11 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     const currentTime = videoEl.currentTime;
     const newTime = Math.min(videoDuration, currentTime + 10);
     jumpTriggeredRef.current = true;
-    // Calculate segment watch time before jump.
-    let segmentWatchTime = 0;
-    if (!videoEl.paused && analyticsRef.current.currentPlayStart !== null) {
-      segmentWatchTime = Math.max(0, currentTime - analyticsRef.current.currentPlayStart);
-    }
+    console.log(`Forward jump from ${currentTime} to ${newTime}`);
+    updateWatchTime(newTime);
     setAnalytics((prev) => ({
       ...prev,
-      totalWatchTime: prev.totalWatchTime + segmentWatchTime,
-      jumpEvents: [
-        ...prev.jumpEvents,
-        { type: "forward", from: currentTime, to: newTime },
-      ],
-      currentPlayStart: !videoEl.paused ? newTime : null,
+      jumpEvents: [...prev.jumpEvents, { type: "forward", from: currentTime, to: newTime }],
     }));
     videoEl.currentTime = newTime;
   };
@@ -312,43 +274,31 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     }
   };
 
-  // --------------------------------------------------
-  // Fullscreen Analytics
-  // --------------------------------------------------
+  // -------------------- Fullscreen Handler --------------------
   const handleFullscreenChange = () => {
-    const currentTime =
-      videoEl && videoEl.currentTime ? videoEl.currentTime : playedSeconds;
+    const currentTime = videoEl && videoEl.currentTime ? videoEl.currentTime : playedSeconds;
     if (document.fullscreenElement) {
+      console.log("Entered fullscreen at:", currentTime);
       setAnalytics((prev) => ({
         ...prev,
-        fullscreenEvents: [
-          ...prev.fullscreenEvents,
-          { entered: currentTime, exited: null },
-        ],
+        fullscreenEvents: [...prev.fullscreenEvents, { entered: currentTime, exited: null }],
       }));
     } else {
+      console.log("Exited fullscreen at:", currentTime);
       setAnalytics((prev) => {
         const events = prev.fullscreenEvents;
         if (events.length > 0 && events[events.length - 1].exited === null) {
           const updatedEvent = { ...events[events.length - 1], exited: currentTime };
-          return {
-            ...prev,
-            fullscreenEvents: [...events.slice(0, -1), updatedEvent],
-          };
+          return { ...prev, fullscreenEvents: [...events.slice(0, -1), updatedEvent] };
         }
         return prev;
       });
     }
   };
 
-  // --------------------------------------------------
-  // Download Handler
-  // --------------------------------------------------
+  // -------------------- Download Handler --------------------
   const handleDownloadClick = () => {
-    setAnalytics((prev) => ({
-      ...prev,
-      download: true,
-    }));
+    setAnalytics((prev) => ({ ...prev, download: true }));
     const a = document.createElement("a");
     a.href = "https://media.w3.org/2010/05/sintel/trailer_hd.mp4";
     a.download = "";
@@ -357,16 +307,15 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     document.body.removeChild(a);
   };
 
-  // --------------------------------------------------
-  // Speed Controller Analytics
-  // --------------------------------------------------
+  // -------------------- Speed Change Handler --------------------
   const handleSpeedChange = (newSpeed) => {
-    const currentTime = videoEl ? videoEl.currentTime : playedSeconds;
+    if (!videoEl) return;
+    const currentTime = videoEl.currentTime;
+    console.log("Speed change at:", currentTime, "New speed:", newSpeed);
     setAnalytics((prev) => {
       let updatedSpeedEvents = [...prev.speedEvents];
-      let currentSpeedEvent = prev.currentSpeedEvent;
-      if (currentSpeedEvent) {
-        updatedSpeedEvents.push({ ...currentSpeedEvent, endTime: currentTime });
+      if (prev.currentSpeedEvent) {
+        updatedSpeedEvents.push({ ...prev.currentSpeedEvent, endTime: currentTime });
       }
       return {
         ...prev,
@@ -377,9 +326,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     setPlaybackRate(newSpeed);
   };
 
-  // --------------------------------------------------
-  // Attach Native Video Element Event Listeners
-  // --------------------------------------------------
+  // -------------------- Attach Native Video Event Listeners --------------------
   useEffect(() => {
     if (!videoEl) return;
     videoEl.addEventListener("play", handlePlay);
@@ -394,7 +341,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
       videoEl.removeEventListener("seeked", handleSeeked);
       videoEl.removeEventListener("timeupdate", handleTimeUpdate);
     };
-  }, [videoEl, isDragging, dragSeekRecorded]);
+  }, [videoEl, isDragging]);
 
   useEffect(() => {
     document.addEventListener("fullscreenchange", handleFullscreenChange);
@@ -402,9 +349,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, [videoEl, playedSeconds]);
 
-  // --------------------------------------------------
-  // Timeline (Progress Bar) Drag Listeners
-  // --------------------------------------------------
+  // Attach timeline drag listeners.
   useEffect(() => {
     const timeline = document.querySelector(".video-react-progress-control");
     if (timeline) {
@@ -415,38 +360,25 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
         timeline.removeEventListener("mouseup", handleTimelineMouseUp);
       };
     }
-  }, [videoEl, isDragging, dragSeekRecorded, dragStartTime]);
+  }, [videoEl, isDragging, dragStartTime]);
 
-  // --------------------------------------------------
-  // Periodic Analytics Submission (Every 15 Seconds)
-  // --------------------------------------------------
+  // -------------------- Periodic Analytics Submission --------------------
   useEffect(() => {
     if (!videoEl) {
       console.log("videoEl not available; analytics interval not set.");
       return;
     }
-
     console.log("Starting analytics interval...");
     const interval = setInterval(async () => {
       try {
-        // Get the current playback time
+        // Before sending, update any ongoing play segment.
         const currentTime = videoEl.currentTime || playedSeconds;
-        // Calculate additional watch time if a continuous play segment exists
-        let additionalTime = 0;
-        if (analyticsRef.current.currentPlayStart !== null && !videoEl.paused) {
-          additionalTime = Math.max(0, currentTime - analyticsRef.current.currentPlayStart);
+        if (!videoEl.paused && analyticsRef.current.currentPlayStart !== null) {
+          updateWatchTime(currentTime);
         }
-
-        // Update the analytics object with additional watch time
-        let updatedAnalytics = {
+        const updatedAnalytics = {
           ...analyticsRef.current,
-          totalWatchTime: analyticsRef.current.totalWatchTime + additionalTime,
-          currentPlayStart: videoEl && !videoEl.paused ? currentTime : analyticsRef.current.currentPlayStart,
-        };
-
-        // Attach extra fields for backend logging
-        updatedAnalytics = {
-          ...updatedAnalytics,
+          inTime: entryTime, // Add the static entry time
           outTime: new Date().toISOString(),
           ip: ip || "",
           location: location || "",
@@ -459,7 +391,6 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
           sourceUrl: url,
         };
 
-        // Build the payload, including formatted fields
         const payload = JSON.stringify({
           ...updatedAnalytics,
           totalWatchTimeFormatted: formatTime(updatedAnalytics.totalWatchTime),
@@ -503,7 +434,6 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
           headers: { "Content-Type": "application/json" },
           body: payload,
         });
-
         if (!response.ok) {
           console.error("Analytics API response status:", response.status);
         } else {
@@ -519,8 +449,9 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
       console.log("Clearing analytics interval.");
       clearInterval(interval);
     };
-  }, [videoEl, ip, location, userId, region, os, device, browser, url]);
+  }, [videoEl, ip, location, userId, region, os, device, browser, url, entryTime]);
 
+  // -------------------- Render --------------------
   return (
     <div
       style={{
@@ -552,6 +483,9 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
               const video = playerRef.current?.video?.video;
               if (video) {
                 setVideoEl(video);
+                console.log("Video element set:", video);
+              } else {
+                console.error("Unable to get video element.");
               }
               const duration = playerRef.current.getState().player.duration;
               setVideoDuration(duration);
