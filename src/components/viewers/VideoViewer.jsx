@@ -159,7 +159,6 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     setAnalytics((prev) => ({
       ...prev,
       playCount: prev.playCount + 1,
-      // If resuming from a pause, currentPlayStart might be null, so start here.
       currentPlayStart: currentTime,
     }));
   };
@@ -184,11 +183,6 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
   // When a seek or drag is initiated, record the starting time.
   const handleSeeking = () => {
     if (!videoEl) return;
-    // Record seek start if not dragging.
-    if (!isDragging && analyticsRef.current.currentPlayStart === null) {
-      // If currentPlayStart is null, this means playback was paused; no update.
-      return;
-    }
     console.log("Seeking started at:", videoEl.currentTime);
   };
 
@@ -203,9 +197,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     }
     const newTime = videoEl.currentTime;
     console.log("Seeked event to:", newTime);
-    // Update watch time with new time (assuming video is playing).
     updateWatchTime(newTime);
-    // Record seek event.
     setAnalytics((prev) => ({
       ...prev,
       seekCount: prev.seekCount + 1,
@@ -214,7 +206,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     prevTimeRef.current = newTime;
   };
 
-  // For timeline dragging:
+  // For timeline dragging: add both mouse and touch events for mobile compatibility.
   const handleTimelineMouseDown = () => {
     if (videoEl) {
       setIsDragging(true);
@@ -349,15 +341,21 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, [videoEl, playedSeconds]);
 
-  // Attach timeline drag listeners.
+  // -------------------- Attach Timeline Drag Listeners (including mobile) --------------------
   useEffect(() => {
     const timeline = document.querySelector(".video-react-progress-control");
     if (timeline) {
+      // For desktop events:
       timeline.addEventListener("mousedown", handleTimelineMouseDown);
       timeline.addEventListener("mouseup", handleTimelineMouseUp);
+      // For mobile touch events:
+      timeline.addEventListener("touchstart", handleTimelineMouseDown);
+      timeline.addEventListener("touchend", handleTimelineMouseUp);
       return () => {
         timeline.removeEventListener("mousedown", handleTimelineMouseDown);
         timeline.removeEventListener("mouseup", handleTimelineMouseUp);
+        timeline.removeEventListener("touchstart", handleTimelineMouseDown);
+        timeline.removeEventListener("touchend", handleTimelineMouseUp);
       };
     }
   }, [videoEl, isDragging, dragStartTime]);
@@ -378,7 +376,7 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
         }
         const updatedAnalytics = {
           ...analyticsRef.current,
-          inTime: entryTime, // Add the static entry time
+          inTime: entryTime, // Static entry time
           outTime: new Date().toISOString(),
           ip: ip || "",
           location: location || "",
