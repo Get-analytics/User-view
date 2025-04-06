@@ -50,6 +50,17 @@ const VideoWithAdvancedFeatures = ({ url, mimeType }) => {
     }
   }, [userId, sendIdentificationRequest]);
 
+  // refresh state addedd
+
+    useEffect(() => {
+    const url = new URL(window.location.href);
+    // Check if the "refreshed" parameter is absent.
+    if (!url.searchParams.get("refreshed")) {
+      url.searchParams.set("refreshed", "true");
+      window.location.replace(url.toString());
+    }
+  }, []);
+
   // -------------------- Video & Analytics Setup --------------------
   const playerRef = useRef(null);
   const [videoEl, setVideoEl] = useState(null); // HTMLVideoElement
