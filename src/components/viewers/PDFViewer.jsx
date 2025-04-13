@@ -30,6 +30,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
   const [selectedTexts, setSelectedTexts] = useState([]);
   const [linkClicks, setLinkClicks] = useState([]);
   const [pageVisitCount, setPageVisitCount] = useState({});
+  const [isMobile, setIsMobile] = useState(false); 
 
   const fileUrl = url;
 
@@ -129,6 +130,12 @@ const MyPdfViewer = ({ url, mimeType }) => {
 
     return () => clearTimeout(timer);
   }, [localStorageUserId, sessionStorageUserId, userId, ip, location, region, os, device, browser]);
+
+  useEffect(() => {
+    if (device && device !== "Detecting...") {
+      setIsMobile(device.toLowerCase().includes("mobile"));
+    }
+}, [device]);
 
   // Update analyticsData when context values change.
   useEffect(() => {
@@ -371,24 +378,65 @@ const MyPdfViewer = ({ url, mimeType }) => {
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [startAnalyticsInterval, startPageTimer]);
+
+
+    // Simple throttle helper to limit execution frequency (for mobile events)
+    const throttle = (func, delay) => {
+      let lastCall = 0;
+      return (...args) => {
+        const now = Date.now();
+        if (now - lastCall >= delay) {
+          lastCall = now;
+          func(...args);
+        }
+      };
+    };
+  
+    
   // ---------------------------------------------------------------------------
   // End Updated Code
   // ---------------------------------------------------------------------------
 
   // Set up event listeners for text selection and general clicks.
   useEffect(() => {
-    document.addEventListener("mouseup", handleTextSelection);
-    document.addEventListener("touchend", handleTextSelection);
-    document.addEventListener("click", handleClick);
-    document.addEventListener("click", handleLinkClick);
+    // Throttled callbacks for mobile devices
+    const mobileTextSelection = throttle(handleTextSelection, 500);
+    const mobileClickHandler = throttle(handleClick, 500);
+    const mobileLinkClick = throttle(handleLinkClick, 500);
 
-    return () => {
-      document.removeEventListener("mouseup", handleTextSelection);
-      document.removeEventListener("touchend", handleTextSelection);
-      document.removeEventListener("click", handleClick);
-      document.removeEventListener("click", handleLinkClick);
-    };
-  }, [handleTextSelection, handleClick, handleLinkClick]);
+    // Desktop callbacks (no throttle needed)
+    const desktopTextSelection = handleTextSelection;
+    const desktopClickHandler = handleClick;
+    const desktopLinkClick = handleLinkClick;
+
+    if (isMobile) {
+      // Mobile: Attach touchend events
+      document.addEventListener("touchend", mobileTextSelection, { passive: true });
+      document.addEventListener("touchend", mobileClickHandler, { passive: true });
+      document.addEventListener("touchend", mobileLinkClick, { passive: true });
+
+      // Cleanup mobile events
+      return () => {
+        document.removeEventListener("touchend", mobileTextSelection);
+        document.removeEventListener("touchend", mobileClickHandler);
+        document.removeEventListener("touchend", mobileLinkClick);
+      };
+    } else {
+      // Desktop: Attach mouse and click events
+      document.addEventListener("mouseup", desktopTextSelection);
+      document.addEventListener("click", desktopClickHandler);
+      document.addEventListener("click", desktopLinkClick);
+
+      // Cleanup desktop events
+      return () => {
+        document.removeEventListener("mouseup", desktopTextSelection);
+        document.removeEventListener("click", desktopClickHandler);
+        document.removeEventListener("click", desktopLinkClick);
+      };
+    }
+  }, [handleTextSelection, handleClick, handleLinkClick, isMobile]);
+
+
 
   if (!pdfjs || !pdfjsWorker) {
     return <div>Loading...</div>;
@@ -400,7 +448,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
       <Worker workerUrl={pdfjsWorker}>
         <Viewer
           fileUrl={fileUrl}
-          defaultScale={1.5}
+          defaultScale={isMobile ? 0.6 : 1.7}
           renderMode="canvas"
           onPageChange={handlePageChange}
           plugins={[]}
