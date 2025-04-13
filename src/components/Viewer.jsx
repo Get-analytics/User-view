@@ -7,6 +7,8 @@ import VideoViewer from "./viewers/VideoViewer";
 import PPTXViewer from "./viewers/PPTXViewer";
 import WebPageViewer from "./viewers/WebPageViewer";
 import {  useUser } from "../context/Usercontext";
+import Error404 from "./404_error/expiredlink";
+
 
 
 const Viewer = () => {
@@ -31,7 +33,7 @@ const Viewer = () => {
    
   useEffect(() => {
     if (id) {
-      fetch(`https://user-view-backend.vercel.app/api/shortid/viewer/${id}`)
+      fetch(`https://filescene.onrender.com/api/shortid/viewer/${id}`)
         .then((response) => {
           if (!response.ok) {
             throw new Error("ShortId not found");
@@ -53,6 +55,12 @@ const Viewer = () => {
   if (!data) {
     return <p>Loading...</p>;
   }
+
+   // 🔴 Check for deactivated document
+   if (data.active === "D") {
+    return <Error404 />; // You can also return a DeactivatedPage component if needed
+  }
+
 
   const { mimeType, originalUrl } = data;
 
