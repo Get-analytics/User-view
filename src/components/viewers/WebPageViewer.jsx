@@ -15,6 +15,12 @@ const WebPageViewer = ({ url, mimeType }) => {
 
   // Track entry time
   const [inTime] = useState(new Date().toISOString());
+  
+  // Refs for absence tracking
+  const lastLeaveTimeRef = useRef(null);
+  const absenceTimesRef = useRef([]);
+  // Accumulated absence (in milliseconds)
+  const accumulatedAbsenceRef = useRef(0);
 
   // Track if user data is fully available
   const [isUserDataLoaded, setIsUserDataLoaded] = useState(false);
@@ -40,7 +46,6 @@ const WebPageViewer = ({ url, mimeType }) => {
   // Identification API call: fires once after 3 seconds if userId is valid.
   const sendIdentificationRequest = useCallback(async () => {
     if (!userId || !window.location.pathname) return;
-
     const documentId = window.location.pathname.split("/").pop();
     const requestData = { userId, documentId, mimeType: "weblink" };
 
@@ -50,9 +55,7 @@ const WebPageViewer = ({ url, mimeType }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestData),
       });
-      if (!response.ok) {
-        throw new Error("Failed to identify user");
-      }
+      if (!response.ok) throw new Error("Failed to identify user");
       const result = await response.json();
       console.log("User identification successful:", result);
     } catch (error) {
@@ -71,14 +74,50 @@ const WebPageViewer = ({ url, mimeType }) => {
     }
   }, [userId, sendIdentificationRequest]);
 
-  // Periodic Analytics Submission (Every 15 Seconds)
+  // Handle absence immediately on visibility change.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        // Record the timestamp when the user leaves.
+        lastLeaveTimeRef.current = new Date();
+      } else if (document.visibilityState === "visible" && lastLeaveTimeRef.current) {
+        const now = new Date();
+        const absenceDurationMs = now - lastLeaveTimeRef.current;
+        const absenceSeconds = Math.round(absenceDurationMs / 1000);
+
+        // Add to the accumulated absence duration.
+        accumulatedAbsenceRef.current += absenceDurationMs;
+
+        absenceTimesRef.current.push({
+          leaveTime: lastLeaveTimeRef.current.toISOString(),
+          returnTime: now.toISOString(),
+          absenceSeconds,
+        });
+
+        // Clear the last leave time.
+        lastLeaveTimeRef.current = null;
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
+  // Updated Periodic Analytics Submission with corrected absence-based logic.
   useEffect(() => {
     if (!isUserDataLoaded) return;
-    const interval = setInterval(() => {
-      const exitTime = new Date();
-      const totalTimeSpent = Math.floor((exitTime - new Date(inTime)) / 1000);
 
-      // Process heatmap data, filtering out grid cells with <= 5 seconds recorded
+    const analyticsInterval = setInterval(() => {
+      // Only send analytics if the document is visible.
+      if (document.visibilityState === "hidden") return;
+
+      const currentTime = new Date();
+      // Calculate total active time by subtracting accumulated absence from overall elapsed time.
+      const elapsedTimeMs = currentTime - new Date(inTime);
+      const activeTimeMs = elapsedTimeMs - accumulatedAbsenceRef.current;
+      const totalTimeSpent = Math.floor(activeTimeMs / 1000);
+
+      // Process heatmap data, filtering out low-interaction cells.
       const filteredHeatmap = Array.from(heatmapData.current.entries())
         .map(([position, time]) => ({
           position,
@@ -97,9 +136,10 @@ const WebPageViewer = ({ url, mimeType }) => {
         webId: window.location.pathname.split("/").pop() || "",
         sourceUrl: url,
         inTime,
-        outTime: exitTime.toISOString(),
+        outTime: currentTime.toISOString(),
         totalTimeSpent,
         pointerHeatmap: filteredHeatmap,
+        absenceHistory: absenceTimesRef.current,
       };
 
       fetch("https://user-view-backend.vercel.app/api/v1/webpageinteraction/analytics", {
@@ -108,9 +148,7 @@ const WebPageViewer = ({ url, mimeType }) => {
         body: JSON.stringify(payload),
       })
         .then((response) => {
-          if (!response.ok) {
-            throw new Error("Network response was not ok");
-          }
+          if (!response.ok) throw new Error("Network response was not ok");
           return response.json();
         })
         .then((result) => {
@@ -121,13 +159,17 @@ const WebPageViewer = ({ url, mimeType }) => {
         );
     }, 15000);
 
-    return () => clearInterval(interval);
+    return () => clearInterval(analyticsInterval);
   }, [isUserDataLoaded, ip, location, userId, region, os, device, browser, inTime, url]);
 
-  // Handle pointer movement messages
+  // Handle pointer movement messages.
   useEffect(() => {
     const handleMessage = (event) => {
-      if (!event.data || typeof event.data.x !== "number" || typeof event.data.y !== "number") {
+      if (
+        !event.data ||
+        typeof event.data.x !== "number" ||
+        typeof event.data.y !== "number"
+      ) {
         return;
       }
       const { x, y } = event.data;
@@ -152,9 +194,7 @@ const WebPageViewer = ({ url, mimeType }) => {
     };
 
     window.addEventListener("message", handleMessage);
-    return () => {
-      window.removeEventListener("message", handleMessage);
-    };
+    return () => window.removeEventListener("message", handleMessage);
   }, [url, isUserDataLoaded]);
 
   return (
