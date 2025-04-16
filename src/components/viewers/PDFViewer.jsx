@@ -22,8 +22,10 @@ const MyPdfViewer = ({ url, mimeType }) => {
   const milestoneVisitedPagesRef = useRef(0);
   const apiCalledRef = useRef(false);
 
-  // New: Ref to capture when the user leaves the tab.
+  // Ref to capture when the user leaves the tab.
   const lastLeaveTimeRef = useRef(null);
+  // New ref for auto-close timer when viewer remains hidden > 1 min.
+  const autoCloseTimerRef = useRef(null);
 
   // State variables for tracking user interactions for analytics.
   const [totalClicks, setTotalClicks] = useState(0);
@@ -135,7 +137,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
     if (device && device !== "Detecting...") {
       setIsMobile(device.toLowerCase().includes("mobile"));
     }
-}, [device]);
+  }, [device]);
 
   // Update analyticsData when context values change.
   useEffect(() => {
@@ -275,10 +277,8 @@ const MyPdfViewer = ({ url, mimeType }) => {
   // ---------------------------------------------------------------------------
   // Updated Analytics Interval & Visibility Change Handler
   // ---------------------------------------------------------------------------
-  // Ref to store the analytics API call interval.
   const analyticsIntervalRef = useRef(null);
   const absenceTimesRef = useRef([]);
-
 
   const startAnalyticsInterval = useCallback(() => {
     analyticsIntervalRef.current = setInterval(() => {
@@ -297,7 +297,6 @@ const MyPdfViewer = ({ url, mimeType }) => {
           `${currentTime.toISOString().replace("Z", "+00:00")} - ${absenceSeconds}s = ${computedOutTime.replace("Z", "+00:00")}`
         );
   
-        // Push the absence time format into the array
         absenceTimesRef.current.push({
           leaveTime: leaveTime.toISOString(),
           returnTime: currentTime.toISOString(),
@@ -319,8 +318,6 @@ const MyPdfViewer = ({ url, mimeType }) => {
         selectedTexts,
         totalClicks,
         linkClicks,
-  
-        // Send all absence entries
         absenceHistory: absenceTimesRef.current,
       };
   
@@ -342,9 +339,6 @@ const MyPdfViewer = ({ url, mimeType }) => {
     }, 15000);
   }, [userId, selectedTexts, totalClicks, linkClicks]);
   
-  
-
-  // Start the analytics interval when the component mounts.
   useEffect(() => {
     startAnalyticsInterval();
     return () => {
@@ -353,19 +347,37 @@ const MyPdfViewer = ({ url, mimeType }) => {
   }, [startAnalyticsInterval]);
 
   // Listen for page visibility changes.
-  // When the document is hidden, record the leave timestamp.
-  // When it becomes visible, resume analytics and per-page tracking.
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
         // Record the moment the user leaves the tab.
         lastLeaveTimeRef.current = new Date().toISOString();
-
         clearInterval(analyticsIntervalRef.current);
         analyticsIntervalRef.current = null;
         clearInterval(pageTimerRef.current);
         pageTimerRef.current = null;
+
+        // Start auto-close timer for 20 minute of absence.
+        autoCloseTimerRef.current = setTimeout(() => {
+          console.log("Absence > 1 minute. Auto-closing the viewer.");
+          window.close();
+        }, 1200000);
       } else if (document.visibilityState === "visible") {
+        // Check if the absence time was > 20 minute.
+        if (lastLeaveTimeRef.current) {
+          const absenceDurationMs = new Date() - new Date(lastLeaveTimeRef.current);
+          if (absenceDurationMs >= 1200000) {
+            console.log("User was absent for more than 1 minute. Auto-closing the viewer.");
+            window.close();
+            return;
+          }
+        }
+
+        // Clear any auto-close timer if user returns before 1 minute.
+        if (autoCloseTimerRef.current) {
+          clearTimeout(autoCloseTimerRef.current);
+          autoCloseTimerRef.current = null;
+        }
         if (!analyticsIntervalRef.current) {
           startAnalyticsInterval();
         }
@@ -379,55 +391,40 @@ const MyPdfViewer = ({ url, mimeType }) => {
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [startAnalyticsInterval, startPageTimer]);
 
-
-    // Simple throttle helper to limit execution frequency (for mobile events)
-    const throttle = (func, delay) => {
-      let lastCall = 0;
-      return (...args) => {
-        const now = Date.now();
-        if (now - lastCall >= delay) {
-          lastCall = now;
-          func(...args);
-        }
-      };
+  // Simple throttle helper to limit execution frequency (for mobile events)
+  const throttle = (func, delay) => {
+    let lastCall = 0;
+    return (...args) => {
+      const now = Date.now();
+      if (now - lastCall >= delay) {
+        lastCall = now;
+        func(...args);
+      }
     };
-  
-    
-  // ---------------------------------------------------------------------------
-  // End Updated Code
-  // ---------------------------------------------------------------------------
+  };
 
-  // Set up event listeners for text selection and general clicks.
   useEffect(() => {
-    // Throttled callbacks for mobile devices
     const mobileTextSelection = throttle(handleTextSelection, 500);
     const mobileClickHandler = throttle(handleClick, 500);
     const mobileLinkClick = throttle(handleLinkClick, 500);
 
-    // Desktop callbacks (no throttle needed)
     const desktopTextSelection = handleTextSelection;
     const desktopClickHandler = handleClick;
     const desktopLinkClick = handleLinkClick;
 
     if (isMobile) {
-      // Mobile: Attach touchend events
       document.addEventListener("touchend", mobileTextSelection, { passive: true });
       document.addEventListener("touchend", mobileClickHandler, { passive: true });
       document.addEventListener("touchend", mobileLinkClick, { passive: true });
-
-      // Cleanup mobile events
       return () => {
         document.removeEventListener("touchend", mobileTextSelection);
         document.removeEventListener("touchend", mobileClickHandler);
         document.removeEventListener("touchend", mobileLinkClick);
       };
     } else {
-      // Desktop: Attach mouse and click events
       document.addEventListener("mouseup", desktopTextSelection);
       document.addEventListener("click", desktopClickHandler);
       document.addEventListener("click", desktopLinkClick);
-
-      // Cleanup desktop events
       return () => {
         document.removeEventListener("mouseup", desktopTextSelection);
         document.removeEventListener("click", desktopClickHandler);
@@ -435,8 +432,6 @@ const MyPdfViewer = ({ url, mimeType }) => {
       };
     }
   }, [handleTextSelection, handleClick, handleLinkClick, isMobile]);
-
-
 
   if (!pdfjs || !pdfjsWorker) {
     return <div>Loading...</div>;
