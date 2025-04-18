@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
+import { v4 as uuidv4 } from "uuid";
 import { useUser } from "../../context/Usercontext";
 
 const WebPageViewer = ({ url, mimeType }) => {
@@ -28,6 +29,10 @@ const WebPageViewer = ({ url, mimeType }) => {
   // Prevent multiple API calls for identification
   const apiCalledRef = useRef(false);
 
+ //session id config 
+  const sessionIdRef = useRef(uuidv4());
+
+
   // Monitor when user data is ready
   useEffect(() => {
     if (
@@ -47,7 +52,7 @@ const WebPageViewer = ({ url, mimeType }) => {
   const sendIdentificationRequest = useCallback(async () => {
     if (!userId || !window.location.pathname) return;
     const documentId = window.location.pathname.split("/").pop();
-    const requestData = { userId, documentId, mimeType: "weblink" };
+    const requestData = { userId, documentId, mimeType: "weblink" , sessionId: sessionIdRef.current};
 
     try {
       const response = await fetch("https://user-view-backend.vercel.app/api/user/identify", {
@@ -134,6 +139,7 @@ const WebPageViewer = ({ url, mimeType }) => {
         device,
         browser,
         webId: window.location.pathname.split("/").pop() || "",
+        sessionId: sessionIdRef.current,
         sourceUrl: url,
         inTime,
         outTime: currentTime.toISOString(),
