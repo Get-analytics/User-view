@@ -2,6 +2,8 @@ import React, { useEffect, useState, useRef, useCallback } from "react";
 import { Worker, Viewer } from "@react-pdf-viewer/core";
 import "@react-pdf-viewer/core/lib/styles/index.css";
 import { useUser } from "../../context/Usercontext";
+import { v4 as uuidv4 } from "uuid";
+
 
 const MyPdfViewer = ({ url, mimeType }) => {
   console.log(mimeType, "mimetype");
@@ -9,6 +11,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
   const { ip, location, userId, region, os, device, browser } = useUser();
   console.log(ip, location, userId, region, os, device, browser, "dataaaaaaa");
   console.log(window.location.pathname);
+
   console.log(userId, "userid");
 
   const [pdfjs, setPdfjs] = useState(null);
@@ -26,6 +29,8 @@ const MyPdfViewer = ({ url, mimeType }) => {
   const lastLeaveTimeRef = useRef(null);
   // New ref for auto-close timer when viewer remains hidden > 1 min.
   const autoCloseTimerRef = useRef(null);
+
+  const sessionIdRef = useRef(uuidv4());
 
   // State variables for tracking user interactions for analytics.
   const [totalClicks, setTotalClicks] = useState(0);
@@ -74,7 +79,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
     if (!userId || !window.location.pathname) return;
 
     const documentId = window.location.pathname.split("/").pop();
-    const requestData = { userId, documentId, mimeType: "pdf" };
+    const requestData = { userId, documentId, mimeType: "pdf", sessionId: sessionIdRef.current };
 
     try {
       const response = await fetch("https://user-view-backend.vercel.app/api/user/identify", {
@@ -315,6 +320,7 @@ const MyPdfViewer = ({ url, mimeType }) => {
         ...analyticsDataRef.current,
         outTime: payloadOutTime,
         userId,
+        sessionId: sessionIdRef.current,  // <-- ADD THIS LINE
         selectedTexts,
         totalClicks,
         linkClicks,
@@ -361,12 +367,12 @@ const MyPdfViewer = ({ url, mimeType }) => {
         autoCloseTimerRef.current = setTimeout(() => {
           console.log("Absence > 1 minute. Auto-closing the viewer.");
           window.close();
-        }, 1200000);
+        }, 600000);
       } else if (document.visibilityState === "visible") {
         // Check if the absence time was > 20 minute.
         if (lastLeaveTimeRef.current) {
           const absenceDurationMs = new Date() - new Date(lastLeaveTimeRef.current);
-          if (absenceDurationMs >= 1200000) {
+          if (absenceDurationMs >= 600000) {
             console.log("User was absent for more than 1 minute. Auto-closing the viewer.");
             window.close();
             return;
